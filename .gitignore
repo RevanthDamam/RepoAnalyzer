@@ -1,0 +1,31 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Node.js
+node_modules/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Local DBs and temporary repos
+backend/repo_analyzer.db
+backend/temp_repos/
+*.db
+*.db-journal
+
+# IDEs
+.idea/
+.vscode/
+
+# Frontend builds
+frontend/dist/
+frontend/build/

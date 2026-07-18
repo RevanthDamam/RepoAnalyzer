@@ -245,7 +245,9 @@ export default function App() {
                 {activeNavTab === 'overview' && (
                   <Dashboard 
                     stats={repoDetails.statistics} 
-                    technologies={repoDetails.technologies} 
+                    technologies={repoDetails.technologies}
+                    repoId={repoDetails.id}
+                    repoName={repoDetails.name}
                   />
                 )}
                 {activeNavTab === 'chat' && (

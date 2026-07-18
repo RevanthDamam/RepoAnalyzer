@@ -18,6 +18,7 @@ class Repository(Base):
     technologies = Column(JSON, nullable=True)  # Static technology detection results
     features = Column(JSON, nullable=True)      # Statically detected features (auth, payment, database, etc.)
     folder_structure = Column(JSON, nullable=True)
+    codebase_summary = Column(JSON, nullable=True)  # AI-generated structured codebase summary (cached)
     created_at = Column(DateTime, default=datetime.utcnow)
     scanned_at = Column(DateTime, nullable=True)
 
@@ -37,8 +38,6 @@ class File(Base):
     extension = Column(String)
     importance_score = Column(Integer)  # File ranking score (0-100)
     hash = Column(String)  # SHA256 of code content
-    summary = Column(Text, nullable=True)  # AI summary
-    raw_content_compressed = Column(Text, nullable=True)  # Stage 10 compressed text (no comments/spaces)
     
     # 2.0 Complexity & Metrics Columns
     lines_of_code = Column(Integer, default=0)
@@ -59,7 +58,6 @@ class Folder(Base):
     repo_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False)
     path = Column(String, index=True)  # Relative path
     folder_name = Column(String)
-    summary = Column(Text, nullable=True)  # AI folder summary
     parent_path = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

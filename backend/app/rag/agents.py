@@ -1,7 +1,20 @@
 import os
 from sqlalchemy.orm import Session
 from ..database.models import Repository
-from ..summarizer.file_summary import get_groq_client, GROQ_MODEL
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+def get_groq_client():
+    if not GROQ_API_KEY:
+        return None
+    try:
+        return Groq(api_key=GROQ_API_KEY)
+    except Exception:
+        return None
 from .retrieval import build_context_from_results, retrieve_exact_files
 from .routing import route_user_query
 from ..embeddings.search import search_embeddings
@@ -157,7 +170,7 @@ def query_repository(db: Session, repo_id: int, query: str, mode: str = "single"
         
     search_results = search_embeddings(db, repo_id, query, top_k=8)
     vector_context = build_context_from_results(db, repo_id, search_results)
-    file_context = retrieve_exact_files(db, repo_id, query)
+    file_context = retrieve_exact_files(db, repo_id, query, repo.path)
     
     full_context = ""
     if vector_context:

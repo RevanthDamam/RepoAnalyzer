@@ -1,73 +1,114 @@
 # RepoAnalyzer
 
-RepoAnalyzer is an intelligent codebase indexing and semantical querying application built with **React**, **FastAPI**, **PostgreSQL**, and **Groq LLM**. It scans repos, ranks files by semantic importance, extracts framework technologies with no AI cost, hashes files for smart caching, generates hierarchical summaries, indexes vector embeddings, and performs context-compressed RAG queries.
+RepoAnalyzer is a **zero-AI-scan** codebase intelligence platform built with **React**, **FastAPI**, **SQLite**, and **Groq LLM**. It crawls any local repository, ranks files by importance, performs static AST analysis, builds a directed import graph, indexes vector embeddings, and answers developer questions via context-aware RAG — all without spending AI tokens during the scan itself.
 
 ---
 
-## 🏗️ Architecture Pipeline (11 Stages)
+## 🏗️ Architecture Pipeline
 
-1. **Repository Scanner (No AI)**: Walks the repo to extract paths, sizes, extensions, and hashes.
-2. **Smart File Classification (No AI)**: Ranks files by importances (0 to 100) based on location and naming templates.
-3. **Detect Technologies (No AI)**: Inspects package configs (e.g. `package.json`, `requirements.txt`) to extract framework metadata.
-4. **Folder Summaries**: Bottom-up directory walk summarizing leaf folder elements first, propagating to root directories.
-5. **File Summaries**: Analyzes important file logic, extracting core responsibilities and imports.
-6. **Embeddings**: Formulates vector models for directories, files, and READMEs.
-7. **Metadata DB**: Logs statistical details and detected frameworks for instant responses.
-8. **Caching**: Computes SHA256 hashes of code elements to bypass LLM calls on unchanged files.
-9. **User Question Retrieval**: Semi-structured semantic query matching top 8 sources.
-10. **Context Compression Layer**: Strips code comments, redundant spacing, and formatting to conserve LLM tokens.
-11. **Collaborative Multi-Agent Style**: Spawns domain sub-agents (Architecture, Code, and Database) and synthesizes their observations.
+| Stage | Step | AI Cost |
+|-------|------|---------|
+| 1 | **Repository Crawler** — Walks filesystem, extracts paths, sizes, extensions, hashes | None |
+| 2 | **File Classifier** — Ranks files 0–100 by naming templates and directory location | None |
+| 3 | **Technology Detector** — Reads `package.json`, `requirements.txt`, `Dockerfile` etc. to extract the framework stack | None |
+| 4 | **Static Analysis Pipeline** — Runs AST symbol extraction (classes, functions, routes) and cyclomatic complexity | None |
+| 5 | **Dependency Graph** — Builds directed import/require graph, computes fan-in / fan-out per file | None |
+| 6 | **Feature Detection** — Audits code for auth, payments, redis, docker, testing patterns | None |
+| 7 | **Embeddings** — Generates dense vector representations for README, file paths, and code symbols | None |
+| 8 | **Intent Routing** — Intercepts common queries (Docker, auth, redis, symbols) with zero LLM token spend | None |
+| 9 | **RAG Retrieval** — Top-8 cosine similarity vector search, plus exact file source injection | None |
+| 10 | **Groq LLM Answer** — Single-agent or collaborative multi-agent Groq responses over full context | Groq API |
+
+> **No AI is used during the repository scan.** Groq is only called when the user asks a question in the chat panel.
 
 ---
 
 ## ⚡ Quick Start
 
-### 1. Database (PostgreSQL)
-Ensure you have Docker running, then start the database container:
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- A Groq API key (free at [console.groq.com](https://console.groq.com))
+
+### 1. Backend (FastAPI + SQLite)
+
 ```bash
-docker-compose up -d
+cd backend
+
+# Create and activate virtual environment
+python -m venv venv
+.\venv\Scripts\activate          # Windows
+source venv/bin/activate         # macOS/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set your GROQ_API_KEY
 ```
 
-### 2. Backend (FastAPI)
-1. Navigate to backend:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   # On Windows:
-   .\venv\Scripts\activate
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure `.env` file (copy from `.env.example`):
-   ```ini
-   DATABASE_URL=postgresql://postgres:postgrespassword@localhost:5432/repo_analyzer
-   GROQ_API_KEY=your_actual_groq_key
-   EMBEDDING_PROVIDER=local
-   ```
-5. Run the dev server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-   The backend API will run at `http://127.0.0.1:8000`.
+**`backend/.env`**
+```ini
+GROQ_API_KEY=your_actual_groq_key
+GROQ_MODEL=llama-3.1-8b-instant
+```
 
-### 3. Frontend (React + Vite)
-1. Navigate to frontend:
-   ```bash
-   cd frontend
-   ```
-2. Install packages:
-   ```bash
-   npm install
-   ```
-3. Run Vite server:
-   ```bash
-   npm run dev
-   ```
-   The application UI will run at `http://localhost:5173`.
+```bash
+# Start dev server
+uvicorn app.main:app --reload --port 8000
+```
+
+The API runs at `http://127.0.0.1:8000`.
+
+---
+
+### 2. Frontend (React + Vite)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The UI runs at `http://localhost:5173`.
+
+---
+
+## 🗂️ Features at a Glance
+
+| Panel | What it shows |
+|-------|---------------|
+| **Overview** | Total files indexed, language distribution donut, and a full categorized table of every library/framework detected from `requirements.txt` and `package.json` |
+| **File Explorer** | Importance-ranked file list with symbols, LOC, complexity score |
+| **Chat** | Ask any question about the codebase — answered by Groq with file-source citations |
+| **Architecture** | Parsed API routes, class definitions, and function signatures |
+| **Dependencies** | Directed import graph — only shows files with active imports/exports |
+| **Security** | Static checks for hardcoded secrets, dangerous calls, and missing guards |
+| **Quality** | LOC counters, cyclomatic complexity grades, code smell list |
+| **Learning Path** | Auto-generated step-by-step developer onboarding guide |
+
+---
+
+## 🔑 Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GROQ_API_KEY` | Yes | — | Groq API key for LLM chat answers |
+| `GROQ_MODEL` | No | `llama-3.1-8b-instant` | Groq model to use |
+
+> **SQLite** is used by default — no external database setup needed. The DB file `repo_analyzer.db` is created automatically in `backend/` on first run.
+
+---
+
+## 📦 Tech Stack
+
+**Backend** — Python, FastAPI, Uvicorn, SQLAlchemy, SQLite, sentence-transformers, NumPy, Groq SDK
+
+**Frontend** — React 19, Vite, lucide-react, vanilla CSS
+
+---
+
+## 📄 License
+
+MIT

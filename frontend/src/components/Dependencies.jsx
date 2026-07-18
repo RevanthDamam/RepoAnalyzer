@@ -85,11 +85,13 @@ export const Dependencies = ({ repoId }) => {
   // Find files importing this selected file (fan-in edges)
   const importedByList = edges.filter(e => e.target === selectedNodePath).map(e => e.source);
 
-  // Filter nodes for search list
-  const searchedNodes = nodes.filter(n => 
-    n.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    n.path.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter nodes for search list, only showing files with at least one import/export relationship
+  const searchedNodes = nodes
+    .filter(n => n.fan_in > 0 || n.fan_out > 0)
+    .filter(n => 
+      n.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      n.path.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   return (
     <div className="workspace-layout" style={{ gridTemplateColumns: '300px 1fr' }}>

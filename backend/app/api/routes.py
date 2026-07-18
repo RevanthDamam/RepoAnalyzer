@@ -17,7 +17,7 @@ from ..analysis.feature_detector import detect_repo_features
 from ..analysis.dependency import analyze_dependencies
 from ..analysis.quality import analyze_codebase_quality
 from ..analysis.learning import generate_onboarding_guide
-from ..summarizer.folder_summary import run_summarization_pipeline
+from ..summarizer.folder_summary import run_static_analysis_pipeline
 from ..embeddings.generator import index_repository_embeddings
 from ..rag.agents import query_repository
 
@@ -130,9 +130,9 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         repo.technologies = tech_stack
         db.commit()
         
-        # 4 & 7. AST extraction & Caching & Summarization
-        update_progress("Extracting symbols & generating summaries", 40.0)
-        run_summarization_pipeline(db, repo, repo_path, progress_callback=update_progress)
+        # 4 & 7. AST extraction & Caching & Static Parsing
+        update_progress("Extracting symbols & static metadata", 40.0)
+        run_static_analysis_pipeline(db, repo, repo_path, progress_callback=update_progress)
         
         # 5. Build Dependency Graph (fan-in/fan-out metrics)
         update_progress("Building import dependency graph", 65.0)
@@ -236,7 +236,6 @@ def get_repository_details(repo_id: int, db: Session = Depends(get_db)):
         "importance_score": f.importance_score,
         "lines_of_code": f.lines_of_code,
         "complexity_score": f.complexity_score,
-        "has_summary": f.summary is not None and f.summary != ""
     } for f in files]
     
     progress = scan_progress.get(repo_id, {"message": repo.status, "percent": 100.0 if repo.status == "completed" else 0.0})
@@ -314,8 +313,6 @@ def get_file_content_and_summary(repo_id: int, file_id: int, db: Session = Depen
         "complexity_score": file_record.complexity_score,
         "fan_in": file_record.fan_in,
         "fan_out": file_record.fan_out,
-        "summary": file_record.summary,
-        "raw_content_compressed": file_record.raw_content_compressed,
         "raw_content": raw_content,
         "symbols": symbols_list
     }
@@ -349,7 +346,7 @@ def get_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
     files = db.query(File).filter(File.repo_id == repo_id).all()
     
     edges = [{"source": d.from_file_path, "target": d.to_file_path} for d in deps]
-    nodes = [{"path": f.path, "filename": f.filename, "fan_in": f.fan_in, "fan_out": f.fan_out, "summary": f.summary} for f in files]
+    nodes = [{"path": f.path, "filename": f.filename, "fan_in": f.fan_in, "fan_out": f.fan_out} for f in files]
     
     return {
         "nodes": nodes,
@@ -367,7 +364,7 @@ def rebuild_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
     deps = db.query(Dependency).filter(Dependency.repo_id == repo_id).all()
     files = db.query(File).filter(File.repo_id == repo_id).all()
     edges = [{"source": d.from_file_path, "target": d.to_file_path} for d in deps]
-    nodes = [{"path": f.path, "filename": f.filename, "fan_in": f.fan_in, "fan_out": f.fan_out, "summary": f.summary} for f in files]
+    nodes = [{"path": f.path, "filename": f.filename, "fan_in": f.fan_in, "fan_out": f.fan_out} for f in files]
     return {"nodes": nodes, "edges": edges}
 
 @router.get("/api/repositories/{repo_id}/quality")
@@ -379,3 +376,302 @@ def get_repo_quality(repo_id: int, db: Session = Depends(get_db)):
 def get_repo_learning_path(repo_id: int, db: Session = Depends(get_db)):
     """Returns a step-by-step codebase onboarding path checklist."""
     return generate_onboarding_guide(db, repo_id)
+
+@router.get("/api/repositories/{repo_id}/manifest")
+def get_repo_manifest(repo_id: int, db: Session = Depends(get_db)):
+    """Parses requirements.txt and package.json to return categorized dependency manifest."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Category map: package name (lowercase) -> {type, language}
+    KNOWN_CATEGORIES = {
+        # Python - Backend
+        "fastapi": {"type": "Framework", "lang": "Python"},
+        "uvicorn": {"type": "Server", "lang": "Python"},
+        "sqlalchemy": {"type": "ORM", "lang": "Python"},
+        "psycopg2": {"type": "Database driver", "lang": "Python"},
+        "psycopg2-binary": {"type": "Database driver", "lang": "Python"},
+        "python-dotenv": {"type": "Library", "lang": "Python"},
+        "groq": {"type": "SDK / Library", "lang": "Python"},
+        "numpy": {"type": "Library", "lang": "Python"},
+        "sentence-transformers": {"type": "ML Library", "lang": "Python"},
+        "google-generativeai": {"type": "SDK / Library", "lang": "Python"},
+        "openai": {"type": "SDK / Library", "lang": "Python"},
+        "pydantic": {"type": "Data validation", "lang": "Python"},
+        "requests": {"type": "HTTP library", "lang": "Python"},
+        "pyyaml": {"type": "Library", "lang": "Python"},
+        "aiofiles": {"type": "Library", "lang": "Python"},
+        "httpx": {"type": "HTTP library", "lang": "Python"},
+        "alembic": {"type": "DB migrations", "lang": "Python"},
+        "celery": {"type": "Task queue", "lang": "Python"},
+        "redis": {"type": "Cache client", "lang": "Python"},
+        "boto3": {"type": "AWS SDK", "lang": "Python"},
+        "pillow": {"type": "Image library", "lang": "Python"},
+        "pytest": {"type": "Testing", "lang": "Python"},
+        "black": {"type": "Formatter", "lang": "Python"},
+        "mypy": {"type": "Type checker", "lang": "Python"},
+        "flake8": {"type": "Linter", "lang": "Python"},
+        # JS/TS - Frontend
+        "react": {"type": "UI Library", "lang": "JavaScript"},
+        "react-dom": {"type": "Library", "lang": "JavaScript"},
+        "vite": {"type": "Build tool", "lang": "JavaScript"},
+        "typescript": {"type": "Language compiler", "lang": "TypeScript"},
+        "lucide-react": {"type": "Component library", "lang": "JavaScript"},
+        "oxlint": {"type": "Linter", "lang": "JavaScript"},
+        "@vitejs/plugin-react": {"type": "Build plugin", "lang": "JavaScript"},
+        "@types/node": {"type": "Type definitions", "lang": "TypeScript"},
+        "@types/react": {"type": "Type definitions", "lang": "TypeScript"},
+        "@types/react-dom": {"type": "Type definitions", "lang": "TypeScript"},
+        "axios": {"type": "HTTP library", "lang": "JavaScript"},
+        "next": {"type": "Framework", "lang": "JavaScript"},
+        "express": {"type": "Framework", "lang": "JavaScript"},
+        "tailwindcss": {"type": "CSS framework", "lang": "CSS"},
+        "eslint": {"type": "Linter", "lang": "JavaScript"},
+        "prettier": {"type": "Formatter", "lang": "JavaScript"},
+        "jest": {"type": "Testing", "lang": "JavaScript"},
+        "zustand": {"type": "State management", "lang": "JavaScript"},
+        "redux": {"type": "State management", "lang": "JavaScript"},
+        "framer-motion": {"type": "Animation library", "lang": "JavaScript"},
+    }
+
+    packages = []
+
+    # --- Parse requirements.txt ---
+    req_path = os.path.join(repo.path, "requirements.txt")
+    # Also check backend/ subdirectory
+    if not os.path.exists(req_path):
+        req_path = os.path.join(repo.path, "backend", "requirements.txt")
+
+    if os.path.exists(req_path):
+        try:
+            with open(req_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # Strip version specifiers: fastapi>=0.100.0 -> fastapi
+                    pkg_name = line.split(">=")[0].split("<=")[0].split("==")[0].split("!=")[0].split("~=")[0].strip()
+                    cat = KNOWN_CATEGORIES.get(pkg_name.lower(), {"type": "Library", "lang": "Python"})
+                    packages.append({
+                        "name": pkg_name,
+                        "type": cat["type"],
+                        "lang": cat["lang"],
+                        "ecosystem": "backend"
+                    })
+        except Exception:
+            pass
+
+    # --- Parse package.json ---
+    pkg_path = os.path.join(repo.path, "package.json")
+    if not os.path.exists(pkg_path):
+        pkg_path = os.path.join(repo.path, "frontend", "package.json")
+
+    if os.path.exists(pkg_path):
+        try:
+            import json
+            with open(pkg_path, "r", encoding="utf-8", errors="ignore") as f:
+                pkg_json = json.load(f)
+            all_deps = {
+                **pkg_json.get("dependencies", {}),
+                **pkg_json.get("devDependencies", {})
+            }
+            for pkg_name in all_deps:
+                cat = KNOWN_CATEGORIES.get(pkg_name.lower(), {"type": "Library", "lang": "JavaScript"})
+                packages.append({
+                    "name": pkg_name,
+                    "type": cat["type"],
+                    "lang": cat["lang"],
+                    "ecosystem": "frontend"
+                })
+        except Exception:
+            pass
+
+    # Group by ecosystem then lang
+    backend_pkgs = [p for p in packages if p["ecosystem"] == "backend"]
+    frontend_pkgs = [p for p in packages if p["ecosystem"] == "frontend"]
+
+    return {
+        "backend": backend_pkgs,
+        "frontend": frontend_pkgs,
+        "total": len(packages)
+    }
+
+@router.get("/api/repositories/{repo_id}/codebase-summary")
+def get_codebase_summary(repo_id: int, db: Session = Depends(get_db)):
+    """
+    Returns AI-generated structured codebase summary.
+    Cached on Repository.codebase_summary after first generation.
+    """
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Return cached version if available
+    if repo.codebase_summary:
+        return repo.codebase_summary
+
+    # ── Collect context for prompt ──────────────────────────────────────────
+    context_parts = []
+
+    # 1. Repo name & path
+    context_parts.append(f"Project name: {repo.name}")
+    context_parts.append(f"Local path: {repo.path}")
+
+    # 2. Technology stack
+    if repo.technologies:
+        tech = repo.technologies
+        context_parts.append(f"Primary language: {tech.get('language', 'Unknown')}")
+        context_parts.append(f"Other languages: {', '.join(tech.get('languages', []))}")
+        context_parts.append(f"Web framework: {tech.get('framework', 'None')}")
+        context_parts.append(f"Database: {tech.get('database', 'None')}")
+        context_parts.append(f"ORM: {tech.get('orm', 'None')}")
+        context_parts.append(f"Testing: {tech.get('testing', 'None')}")
+        context_parts.append(f"Docker: {tech.get('docker', False)}")
+        context_parts.append(f"Tailwind: {tech.get('tailwind', False)}")
+
+    # 3. Top 30 important files (ranked)
+    top_files = db.query(File).filter(File.repo_id == repo_id).order_by(File.importance_score.desc()).limit(30).all()
+    if top_files:
+        file_lines = [f"  - {f.path} (score={f.importance_score}, LOC={f.lines_of_code})" for f in top_files]
+        context_parts.append("Top files by importance:\n" + "\n".join(file_lines))
+
+    # 4. Folder structure (top-level)
+    folders = db.query(Folder).filter(Folder.repo_id == repo_id).all()
+    top_folders = [f.path for f in folders if f.path.count('/') == 0]
+    if top_folders:
+        context_parts.append(f"Top-level directories: {', '.join(top_folders)}")
+
+    # 5. Symbols (top 20)
+    symbols = db.query(Symbol).filter(Symbol.repo_id == repo_id).limit(20).all()
+    if symbols:
+        sym_lines = [f"  - {s.type} {s.name}" for s in symbols]
+        context_parts.append("Key symbols:\n" + "\n".join(sym_lines))
+
+    # 6. Feature flags
+    if repo.features:
+        active = [k for k, v in repo.features.items() if v]
+        if active:
+            context_parts.append(f"Detected features: {', '.join(active)}")
+
+    # 7. README (truncated)
+    readme_path = os.path.join(repo.path, "README.md")
+    if os.path.exists(readme_path):
+        try:
+            with open(readme_path, "r", encoding="utf-8", errors="ignore") as f:
+                readme = f.read()[:2000]
+            context_parts.append(f"README excerpt:\n{readme}")
+        except Exception:
+            pass
+
+    # 8. requirements.txt
+    req_path = os.path.join(repo.path, "requirements.txt")
+    if not os.path.exists(req_path):
+        req_path = os.path.join(repo.path, "backend", "requirements.txt")
+    if os.path.exists(req_path):
+        try:
+            with open(req_path, "r", encoding="utf-8", errors="ignore") as f:
+                context_parts.append(f"Python dependencies:\n{f.read()[:600]}")
+        except Exception:
+            pass
+
+    # 9. package.json dependencies
+    pkg_path = os.path.join(repo.path, "package.json")
+    if not os.path.exists(pkg_path):
+        pkg_path = os.path.join(repo.path, "frontend", "package.json")
+    if os.path.exists(pkg_path):
+        try:
+            import json as _json
+            with open(pkg_path, "r", encoding="utf-8", errors="ignore") as f:
+                pkg = _json.load(f)
+            all_deps = list({**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}.keys())
+            context_parts.append(f"JS/TS packages: {', '.join(all_deps[:20])}")
+        except Exception:
+            pass
+
+    full_context = "\n\n".join(context_parts)
+
+    # ── Call Groq LLM ───────────────────────────────────────────────────────
+    from ..rag.agents import get_groq_client, GROQ_MODEL
+    client = get_groq_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Groq API key not configured.")
+
+    system_prompt = (
+        "You are a senior software engineer writing an internal technical overview of a codebase. "
+        "Based only on the provided repository context, return a single valid JSON object. "
+        "Do not invent features. Be concise and technically accurate. "
+        "Do not use marketing language. Write as if introducing the repo to a new team member. "
+        "If you cannot confidently determine a field, omit it rather than guessing."
+    )
+
+    user_prompt = f"""Repository context:
+---
+{full_context}
+---
+
+Return ONLY valid JSON (no markdown, no explanation) in this exact schema:
+{{
+  "project_overview": "2-3 sentence description of what this project does and the problem it solves",
+  "primary_purpose": {{
+    "goal": "The main goal of the project",
+    "target_users": "Who this is built for",
+    "main_functionality": "What the core system does"
+  }},
+  "core_features": [
+    "Short action-oriented feature bullet",
+    "..."
+  ],
+  "request_flow": [
+    "Step 1: ...",
+    "Step 2: ...",
+    "..."
+  ],
+  "engineering_highlights": [
+    "Technically interesting implementation detail",
+    "..."
+  ]
+}}
+
+Rules:
+- core_features: 4-6 items
+- request_flow: 4-6 steps describing user→system→response execution path
+- engineering_highlights: 3-5 items, only include things that actually exist in this repo
+- Omit any field you cannot determine from context
+"""
+
+    try:
+        completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            model=GROQ_MODEL,
+            temperature=0.1,
+            max_tokens=900
+        )
+        raw = completion.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        summary_data = _json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate summary: {str(e)}")
+
+    # Cache on repository
+    repo.codebase_summary = summary_data
+    db.commit()
+
+    return summary_data
+
+@router.post("/api/repositories/{repo_id}/codebase-summary/regenerate")
+def regenerate_codebase_summary(repo_id: int, db: Session = Depends(get_db)):
+    """Clears cached summary and regenerates it."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    repo.codebase_summary = None
+    db.commit()
+    return get_codebase_summary(repo_id, db)

@@ -100,10 +100,10 @@ def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None) -> No
     dependencies_to_add = []
     
     for f in db_files:
-        content = f.raw_content_compressed
+        content = None
         
-        # Fallback: read directly from disk if content is missing
-        if not content and repo_path:
+        # Read directly from disk
+        if repo_path:
             full_path = os.path.join(repo_path, f.path)
             if os.path.exists(full_path):
                 try:

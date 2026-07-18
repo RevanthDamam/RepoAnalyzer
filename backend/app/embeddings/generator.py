@@ -91,32 +91,11 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
     # 1. README
     readme_file = db.query(File).filter(File.repo_id == repo.id, File.filename.ilike("README.md")).first()
     if readme_file:
-        text_content = readme_file.summary or readme_file.raw_content_compressed or "README"
         entities_to_embed.append({
             "entity_type": "readme",
             "entity_id": readme_file.id,
             "path": readme_file.path,
-            "text": f"README: {text_content}"
-        })
-        
-    # 2. File Summaries
-    files_with_summaries = db.query(File).filter(File.repo_id == repo.id, File.summary.isnot(None), File.summary != "").all()
-    for f in files_with_summaries:
-        entities_to_embed.append({
-            "entity_type": "file",
-            "entity_id": f.id,
-            "path": f.path,
-            "text": f"File: {f.path}\nSummary: {f.summary}"
-        })
-        
-    # 3. Folder Summaries
-    folders_with_summaries = db.query(Folder).filter(Folder.repo_id == repo.id, Folder.summary.isnot(None), Folder.summary != "").all()
-    for fd in folders_with_summaries:
-        entities_to_embed.append({
-            "entity_type": "folder",
-            "entity_id": fd.id,
-            "path": fd.path,
-            "text": f"Folder: {fd.path}\nSummary: {fd.summary}"
+            "text": f"README: {readme_file.path}"
         })
         
     # 4. Symbol Definitions (2.0 Addition!)

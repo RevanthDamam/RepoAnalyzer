@@ -12,7 +12,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "https://repo-analyzer-9d8w.onrender.com",
+    "https://repo-analyzer-eight.vercel.app",
     "http://localhost:5173",
 ],
     allow_credentials=True,

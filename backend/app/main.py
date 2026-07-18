@@ -11,7 +11,9 @@ app = FastAPI(
 # CORS middleware bindings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+    "https://repo-analyzer-9d8w.onrender.com"
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

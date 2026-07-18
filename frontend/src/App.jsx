@@ -7,8 +7,8 @@ import { Architecture } from './components/Architecture';
 import { Dependencies } from './components/Dependencies';
 import { FilesView } from './components/FilesView';
 
-import { 
-  Bot, Code, RefreshCw, 
+import {
+  Bot, Code, RefreshCw,
   LayoutGrid, Network, GitFork, BookOpen, Settings, ChevronLeft, ChevronRight, Folder
 } from 'lucide-react';
 
@@ -17,10 +17,10 @@ export default function App() {
   const [repoDetails, setRepoDetails] = useState(null);
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [fileDetails, setFileDetails] = useState(null);
-  
+
   // Navigation tabs for the MAIN central area via vertical sidebar
   const [activeNavTab, setActiveNavTab] = useState('overview');
-  
+
   // Workspace tabs for the RIGHT code/chat panel
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('chat');
   const [loadingRepo, setLoadingRepo] = useState(false);
@@ -33,7 +33,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setRepoDetails(data);
-        
+
         // Default select file with highest importance
         if (data.files && data.files.length > 0) {
           setSelectedFileId(data.files[0].id);
@@ -95,13 +95,13 @@ export default function App() {
 
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      
+
       {/* Global Cinematic Header */}
       {selectedRepoId === null && (
         <header style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="logo-container" style={{ cursor: 'pointer' }} onClick={handleBackToSelector}>
             <span style={{ fontWeight: 800, fontSize: '1.4rem', fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.5px' }}>
-              Repo<span style={{ color: 'var(--accent-primary)' }}>Explainer</span>
+              Repo<span style={{ color: 'var(--accent-primary)' }}>Analyzer</span>
             </span>
           </div>
 
@@ -148,7 +148,7 @@ export default function App() {
       ) : (
         // Upgraded workspace layout with horizontal top navigation header
         <div className="workspace-container">
-          
+
           {/* Top Horizontal workspace header */}
           <header className="workspace-header">
             <div className="workspace-logo-area" onClick={handleBackToSelector} style={{ border: 'none', background: 'none' }}>
@@ -157,9 +157,9 @@ export default function App() {
               </div>
             </div>
 
-             {/* Horizontal navigation tabs with active line indicator animation */}
+            {/* Horizontal navigation tabs with active line indicator animation */}
             <div className="workspace-tabs">
-              <div 
+              <div
                 className={`workspace-tab ${activeNavTab === 'overview' ? 'active' : ''}`}
                 onClick={() => setActiveNavTab('overview')}
               >
@@ -167,7 +167,7 @@ export default function App() {
                 <span>Overview</span>
               </div>
 
-              <div 
+              <div
                 className={`workspace-tab ${activeNavTab === 'architecture' ? 'active' : ''}`}
                 onClick={() => setActiveNavTab('architecture')}
               >
@@ -175,7 +175,7 @@ export default function App() {
                 <span>Architecture</span>
               </div>
 
-              <div 
+              <div
                 className={`workspace-tab ${activeNavTab === 'dependencies' ? 'active' : ''}`}
                 onClick={() => setActiveNavTab('dependencies')}
               >
@@ -183,7 +183,7 @@ export default function App() {
                 <span>Dependencies</span>
               </div>
 
-              <div 
+              <div
                 className={`workspace-tab ${activeNavTab === 'files' ? 'active' : ''}`}
                 onClick={() => setActiveNavTab('files')}
               >
@@ -191,7 +191,7 @@ export default function App() {
                 <span>Files</span>
               </div>
 
-              <div 
+              <div
                 className={`workspace-tab ${activeNavTab === 'chat' ? 'active' : ''}`}
                 onClick={() => setActiveNavTab('chat')}
               >
@@ -208,7 +208,7 @@ export default function App() {
 
             {/* 2. Middle Content Pane (Tab Content) */}
             <div className="workspace-content" style={activeNavTab === 'architecture' ? { padding: '2rem', overflow: 'hidden', gap: 0 } : {}}>
-              
+
               {/* Headline Banner based on active Nav Tab */}
               {activeNavTab === 'overview' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -243,8 +243,8 @@ export default function App() {
               {/* Mount active navigation subcomponent */}
               <div style={{ flex: 1, minHeight: 0, height: '100%' }}>
                 {activeNavTab === 'overview' && (
-                  <Dashboard 
-                    stats={repoDetails.statistics} 
+                  <Dashboard
+                    stats={repoDetails.statistics}
                     technologies={repoDetails.technologies}
                     repoId={repoDetails.id}
                     repoName={repoDetails.name}
@@ -255,8 +255,8 @@ export default function App() {
                 )}
                 {activeNavTab === 'architecture' && (
                   <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <Architecture 
-                      repoId={repoDetails.id} 
+                    <Architecture
+                      repoId={repoDetails.id}
                       selectedFileId={selectedFileId}
                       fileDetails={fileDetails}
                       loadingFile={loadingFile}
@@ -270,12 +270,12 @@ export default function App() {
                   <Dependencies repoId={repoDetails.id} />
                 )}
                 {activeNavTab === 'files' && (
-                  <FilesView 
-                    files={repoDetails.files} 
-                    selectedFileId={selectedFileId} 
-                    fileDetails={fileDetails} 
-                    loadingFile={loadingFile} 
-                    onSelectFile={handleSelectFile} 
+                  <FilesView
+                    files={repoDetails.files}
+                    selectedFileId={selectedFileId}
+                    fileDetails={fileDetails}
+                    loadingFile={loadingFile}
+                    onSelectFile={handleSelectFile}
                   />
                 )}
               </div>

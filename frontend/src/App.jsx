@@ -6,6 +6,8 @@ import { ChatInterface } from './components/ChatInterface';
 import { Architecture } from './components/Architecture';
 import { Dependencies } from './components/Dependencies';
 import { FilesView } from './components/FilesView';
+import { apiFetch } from './utils/api';
+
 
 import {
   Bot, Code, RefreshCw,
@@ -29,7 +31,7 @@ export default function App() {
   const fetchRepoDetails = async (repoId) => {
     setLoadingRepo(true);
     try {
-      const res = await fetch(`/api/repositories/${repoId}`);
+      const res = await apiFetch(`/api/repositories/${repoId}`);
       if (res.ok) {
         const data = await res.json();
         setRepoDetails(data);
@@ -50,7 +52,7 @@ export default function App() {
   const fetchFileDetails = async (repoId, fileId) => {
     setLoadingFile(true);
     try {
-      const res = await fetch(`/api/repositories/${repoId}/file/${fileId}`);
+      const res = await apiFetch(`/api/repositories/${repoId}/file/${fileId}`);
       if (res.ok) {
         const data = await res.json();
         setFileDetails(data);

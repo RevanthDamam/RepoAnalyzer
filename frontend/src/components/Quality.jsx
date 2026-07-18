@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Award, Code, CheckCircle, Flame, Layers } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export const Quality = ({ repoId }) => {
   const [data, setData] = useState(null);
@@ -9,7 +10,7 @@ export const Quality = ({ repoId }) => {
     const fetchQuality = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/repositories/${repoId}/quality`);
+        const res = await apiFetch(`/api/repositories/${repoId}/quality`);
         if (res.ok) {
           const json = await res.json();
           setData(json);

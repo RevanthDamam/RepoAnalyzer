@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Users, User, Bot, Layers, Database, Code, Sparkles, RefreshCw, FileText } from 'lucide-react';
+import { apiFetch } from '../utils/api';
+
 
 export const ChatInterface = ({ repoId }) => {
   const [messages, setMessages] = useState([]);
@@ -33,7 +35,7 @@ export const ChatInterface = ({ repoId }) => {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/repositories/${repoId}/query`, {
+      const res = await apiFetch(`/api/repositories/${repoId}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

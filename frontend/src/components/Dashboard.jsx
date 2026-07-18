@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Files, Cpu, Layers, RefreshCw, Zap, ArrowRight, Star, GitMerge, BookOpen } from 'lucide-react';
+import { apiFetch } from '../utils/api';
+
 
 // ── Language badge colors ──────────────────────────────────────────────────
 const LANG_COLORS = {
@@ -70,7 +72,7 @@ function SummaryPanel({ repoId, repoName }) {
 
   const fetchSummary = () => {
     setLoading(true); setError(null);
-    fetch(`/api/repositories/${repoId}/codebase-summary`)
+    apiFetch(`/api/repositories/${repoId}/codebase-summary`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(data => { setSummary(data); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
@@ -78,7 +80,7 @@ function SummaryPanel({ repoId, repoName }) {
 
   const regenerate = () => {
     setRegenerating(true); setSummary(null); setError(null);
-    fetch(`/api/repositories/${repoId}/codebase-summary/regenerate`, { method: 'POST' })
+    apiFetch(`/api/repositories/${repoId}/codebase-summary/regenerate`, { method: 'POST' })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => { setSummary(data); setRegenerating(false); })
       .catch(() => { setError('Regeneration failed.'); setRegenerating(false); });
@@ -210,7 +212,7 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
 
   useEffect(() => {
     if (!repoId) return;
-    fetch(`/api/repositories/${repoId}/manifest`)
+    apiFetch(`/api/repositories/${repoId}/manifest`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setManifest(data); })
       .catch(() => {});

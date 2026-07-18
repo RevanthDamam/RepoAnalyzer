@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Search, ArrowRight, ArrowLeft, RefreshCw } from 'lucide-react';
 import { getBriefExplanation } from '../utils/fileExplanation';
+import { apiFetch } from '../utils/api';
+
 
 export const Dependencies = ({ repoId }) => {
   const [nodes, setNodes] = useState([]);
@@ -13,7 +15,7 @@ export const Dependencies = ({ repoId }) => {
   const fetchDeps = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/repositories/${repoId}/dependencies`);
+      const res = await apiFetch(`/api/repositories/${repoId}/dependencies`);
       if (res.ok) {
         const json = await res.json();
         const fetchedNodes = json.nodes || [];
@@ -38,7 +40,7 @@ export const Dependencies = ({ repoId }) => {
   const rebuildDeps = useCallback(async () => {
     setRebuilding(true);
     try {
-      const res = await fetch(`/api/repositories/${repoId}/dependencies/rebuild`, { method: 'POST' });
+      const res = await apiFetch(`/api/repositories/${repoId}/dependencies/rebuild`, { method: 'POST' });
       if (res.ok) {
         const json = await res.json();
         setNodes(json.nodes || []);

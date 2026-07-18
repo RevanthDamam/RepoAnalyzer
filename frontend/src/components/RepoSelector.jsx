@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, Globe, AlertCircle, RefreshCw, Zap } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export const RepoSelector = ({ onSelectRepo }) => {
   const [repos, setRepos] = useState([]);
@@ -12,7 +13,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
 
   const fetchRepos = async () => {
     try {
-      const res = await fetch('/api/repositories');
+      const res = await apiFetch('/api/repositories');
       if (res.ok) {
         const data = await res.json();
         setRepos(data);
@@ -37,7 +38,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
     setActivePolls(prev => ({ ...prev, [repoId]: true }));
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/repositories/${repoId}/progress`);
+        const res = await apiFetch(`/api/repositories/${repoId}/progress`);
         if (res.ok) {
           const progressData = await res.json();
           
@@ -72,7 +73,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/scan', {
+      const res = await apiFetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -110,7 +111,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
     }
 
     try {
-      const res = await fetch(`/api/repositories/${repoId}`, {
+      const res = await apiFetch(`/api/repositories/${repoId}`, {
         method: 'DELETE'
       });
       if (res.ok) {

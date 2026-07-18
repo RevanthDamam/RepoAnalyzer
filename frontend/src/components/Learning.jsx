@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BookOpen, CheckCircle, Circle, Play } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export const Learning = ({ repoId, onSelectFileByPath }) => {
   const [data, setData] = useState(null);
@@ -10,7 +11,7 @@ export const Learning = ({ repoId, onSelectFileByPath }) => {
     const fetchLearning = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/repositories/${repoId}/learning`);
+        const res = await apiFetch(`/api/repositories/${repoId}/learning`);
         if (res.ok) {
           const json = await res.json();
           setData(json);

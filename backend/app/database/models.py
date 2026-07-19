@@ -11,8 +11,9 @@ class Repository(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    path = Column(String, unique=True, index=True)
+    path = Column(String, index=True)
     github_url = Column(String, nullable=True)
+    session_id = Column(String, index=True, nullable=True)  # per-browser-tab session UUID
     status = Column(String, default="pending")  # pending, scanning, completed, failed
     error_message = Column(String, nullable=True)
     technologies = Column(JSON, nullable=True)  # Static technology detection results
@@ -27,6 +28,7 @@ class Repository(Base):
     symbols = relationship("Symbol", back_populates="repository", cascade="all, delete-orphan")
     dependencies = relationship("Dependency", back_populates="repository", cascade="all, delete-orphan")
     embeddings = relationship("Embedding", back_populates="repository", cascade="all, delete-orphan")
+
 
 class File(Base):
     __tablename__ = "files"

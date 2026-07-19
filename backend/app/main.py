@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database.connection import init_db
+from .database.connection import init_db, migrate_db
 from .api.routes import router as api_router
 
 app = FastAPI(
@@ -20,10 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup routine: initialize SQL database schemas
+# Startup routine: initialize SQL database schemas then apply incremental migrations
 @app.on_event("startup")
 def on_startup():
     init_db()
+    migrate_db()
 
 # Mount analytical endpoints router
 app.include_router(api_router)
+

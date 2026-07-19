@@ -2,8 +2,8 @@ import os
 import traceback
 import subprocess
 import shutil
-from datetime import datetime
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from datetime import datetime, timedelta
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -34,6 +34,57 @@ class ScanRequest(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     mode: Optional[str] = "single"  # single or multi
+
+
+def get_session_id(request: Request) -> str:
+    """
+    FastAPI dependency: extracts the X-Session-ID header from the request.
+    Returns HTTP 400 if the header is missing or blank so that session-less
+    clients get an explicit, actionable error instead of seeing all data.
+    """
+    session_id = request.headers.get("X-Session-ID", "").strip()
+    if not session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing X-Session-ID header. Each browser tab must supply a session identifier."
+        )
+    return session_id
+
+
+# ── Configurable cleanup window ──────────────────────────────────────────────
+SESSION_REPO_TTL_HOURS = int(os.getenv("SESSION_REPO_TTL_HOURS", "24"))
+
+
+def cleanup_old_repositories(db: Session) -> None:
+    """
+    Deletes repositories (and their cascaded children) that were created more
+    than SESSION_REPO_TTL_HOURS hours ago, regardless of session.  These are
+    orphaned records whose browser tab has long since been closed.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=SESSION_REPO_TTL_HOURS)
+    old_repos = db.query(Repository).filter(Repository.created_at < cutoff).all()
+    if old_repos:
+        for repo in old_repos:
+            print(f"[cleanup] Removing stale repo id={repo.id} name='{repo.name}' (created {repo.created_at})")
+            if repo.id in scan_progress:
+                del scan_progress[repo.id]
+            db.delete(repo)
+        db.commit()
+
+
+def require_repo(repo_id: int, session_id: str, db: Session) -> Repository:
+    """
+    Fetches a repository by ID and verifies it belongs to the requesting
+    session.  Raises 404 (not 403) intentionally so session IDs are not
+    leaked to unauthorised callers.
+    """
+    repo = db.query(Repository).filter(
+        Repository.id == repo_id,
+        Repository.session_id == session_id
+    ).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found.")
+    return repo
 
 def bg_scan_repo_v2(repo_id: int, repo_path: str):
     """
@@ -162,7 +213,15 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         scan_progress[repo_id] = {"message": f"failed: {str(e)}", "percent": 0.0}
 
 @router.post("/api/scan")
-def scan_endpoint(req: ScanRequest, bg_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def scan_endpoint(
+    req: ScanRequest,
+    bg_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    # Purge stale repositories from all sessions before starting a new scan
+    cleanup_old_repositories(db)
+
     is_git_url = req.path.startswith("http://") or req.path.startswith("https://") or req.path.startswith("git@")
     
     if is_git_url:
@@ -176,13 +235,17 @@ def scan_endpoint(req: ScanRequest, bg_tasks: BackgroundTasks, db: Session = Dep
         name = req.name or os.path.basename(path) or "Unnamed Repo"
         github_url = req.github_url
     
-    # Check if repository already indexed
-    repo = db.query(Repository).filter(Repository.path == path).first()
+    # Check if this session already has the same repository indexed
+    repo = db.query(Repository).filter(
+        Repository.path == path,
+        Repository.session_id == session_id
+    ).first()
     if not repo:
         repo = Repository(
             name=name,
             path=path,
             github_url=github_url,
+            session_id=session_id,
             status="pending"
         )
         db.add(repo)
@@ -197,8 +260,13 @@ def scan_endpoint(req: ScanRequest, bg_tasks: BackgroundTasks, db: Session = Dep
     return {"message": "Scan queued", "repo_id": repo.id, "name": repo.name}
 
 @router.get("/api/repositories")
-def get_repositories(db: Session = Depends(get_db)):
-    repos = db.query(Repository).order_by(Repository.created_at.desc()).all()
+def get_repositories(
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    repos = db.query(Repository).filter(
+        Repository.session_id == session_id
+    ).order_by(Repository.created_at.desc()).all()
     results = []
     for r in repos:
         progress = scan_progress.get(r.id, {"message": r.status, "percent": 100.0 if r.status == "completed" else 0.0})
@@ -217,10 +285,12 @@ def get_repositories(db: Session = Depends(get_db)):
     return results
 
 @router.get("/api/repositories/{repo_id}")
-def get_repository_details(repo_id: int, db: Session = Depends(get_db)):
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found.")
+def get_repository_details(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    repo = require_repo(repo_id, session_id, db)
         
     num_files = db.query(File).filter(File.repo_id == repo_id).count()
     num_folders = db.query(Folder).filter(Folder.repo_id == repo_id).count()
@@ -259,10 +329,12 @@ def get_repository_details(repo_id: int, db: Session = Depends(get_db)):
     }
 
 @router.delete("/api/repositories/{repo_id}")
-def delete_repository(repo_id: int, db: Session = Depends(get_db)):
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found.")
+def delete_repository(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    repo = require_repo(repo_id, session_id, db)
     db.delete(repo)
     db.commit()
     if repo_id in scan_progress:
@@ -270,17 +342,27 @@ def delete_repository(repo_id: int, db: Session = Depends(get_db)):
     return {"message": "Repository deleted"}
 
 @router.get("/api/repositories/{repo_id}/progress")
-def get_scan_progress(repo_id: int):
+def get_scan_progress(
+    repo_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    # Verify session owns this repo before returning progress
+    require_repo(repo_id, session_id, db)
     if repo_id not in scan_progress:
-        db = next(get_db())
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found.")
         return {"message": repo.status, "percent": 100.0 if repo.status == "completed" else 0.0}
     return scan_progress[repo_id]
 
 @router.get("/api/repositories/{repo_id}/file/{file_id}")
-def get_file_content_and_summary(repo_id: int, file_id: int, db: Session = Depends(get_db)):
+def get_file_content_and_summary(
+    repo_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    require_repo(repo_id, session_id, db)
     file_record = db.query(File).filter(File.repo_id == repo_id, File.id == file_id).first()
     if not file_record:
         raise HTTPException(status_code=404, detail="File not found.")
@@ -318,17 +400,25 @@ def get_file_content_and_summary(repo_id: int, file_id: int, db: Session = Depen
     }
 
 @router.post("/api/repositories/{repo_id}/query")
-def query_repo_endpoint(repo_id: int, req: QueryRequest, db: Session = Depends(get_db)):
+def query_repo_endpoint(
+    repo_id: int,
+    req: QueryRequest,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
+    require_repo(repo_id, session_id, db)
     return query_repository(db, repo_id, req.query, req.mode)
 
 # ================= 2.0 ADVANCED ANALYTICAL ROUTES =================
 
 @router.get("/api/repositories/{repo_id}/architecture")
-def get_repo_architecture(repo_id: int, db: Session = Depends(get_db)):
+def get_repo_architecture(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Returns detected APIs, routes, entry points, and structural facts."""
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repo not found")
+    repo = require_repo(repo_id, session_id, db)
         
     routes = db.query(Symbol).filter(Symbol.repo_id == repo_id, Symbol.type == "route").all()
     classes = db.query(Symbol).filter(Symbol.repo_id == repo_id, Symbol.type == "class").all()
@@ -340,8 +430,13 @@ def get_repo_architecture(repo_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/api/repositories/{repo_id}/dependencies")
-def get_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
+def get_repo_dependencies(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Returns all import dependencies mapping codebase relationships."""
+    require_repo(repo_id, session_id, db)
     deps = db.query(Dependency).filter(Dependency.repo_id == repo_id).all()
     files = db.query(File).filter(File.repo_id == repo_id).all()
     
@@ -354,12 +449,13 @@ def get_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/api/repositories/{repo_id}/dependencies/rebuild")
-def rebuild_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
+def rebuild_repo_dependencies(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Re-runs the static AST dependency analysis for a repository."""
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Repository not found")
+    require_repo(repo_id, session_id, db)
     analyze_dependencies(db, repo_id)
     deps = db.query(Dependency).filter(Dependency.repo_id == repo_id).all()
     files = db.query(File).filter(File.repo_id == repo_id).all()
@@ -368,21 +464,33 @@ def rebuild_repo_dependencies(repo_id: int, db: Session = Depends(get_db)):
     return {"nodes": nodes, "edges": edges}
 
 @router.get("/api/repositories/{repo_id}/quality")
-def get_repo_quality(repo_id: int, db: Session = Depends(get_db)):
+def get_repo_quality(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Returns cyclomatic complexity statistics, LOC counters, and code smells lists."""
+    require_repo(repo_id, session_id, db)
     return analyze_codebase_quality(db, repo_id)
 
 @router.get("/api/repositories/{repo_id}/learning")
-def get_repo_learning_path(repo_id: int, db: Session = Depends(get_db)):
+def get_repo_learning_path(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Returns a step-by-step codebase onboarding path checklist."""
+    require_repo(repo_id, session_id, db)
     return generate_onboarding_guide(db, repo_id)
 
 @router.get("/api/repositories/{repo_id}/manifest")
-def get_repo_manifest(repo_id: int, db: Session = Depends(get_db)):
+def get_repo_manifest(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Parses requirements.txt and package.json to return categorized dependency manifest."""
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = require_repo(repo_id, session_id, db)
 
     # Category map: package name (lowercase) -> {type, language}
     KNOWN_CATEGORIES = {
@@ -498,14 +606,16 @@ def get_repo_manifest(repo_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/api/repositories/{repo_id}/codebase-summary")
-def get_codebase_summary(repo_id: int, db: Session = Depends(get_db)):
+def get_codebase_summary(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """
     Returns AI-generated structured codebase summary.
     Cached on Repository.codebase_summary after first generation.
     """
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = require_repo(repo_id, session_id, db)
 
     # Return cached version if available
     if repo.codebase_summary:
@@ -667,11 +777,13 @@ Rules:
     return summary_data
 
 @router.post("/api/repositories/{repo_id}/codebase-summary/regenerate")
-def regenerate_codebase_summary(repo_id: int, db: Session = Depends(get_db)):
+def regenerate_codebase_summary(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id)
+):
     """Clears cached summary and regenerates it."""
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = require_repo(repo_id, session_id, db)
     repo.codebase_summary = None
     db.commit()
-    return get_codebase_summary(repo_id, db)
+    return get_codebase_summary(repo_id, db, session_id)

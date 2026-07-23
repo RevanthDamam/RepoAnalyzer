@@ -32,7 +32,7 @@ The UI is fully **responsive and mobile-friendly**, working seamlessly on phones
 - Node.js 18+
 - A Groq API key (free at [console.groq.com](https://console.groq.com))
 
-### 1. Backend (FastAPI + SQLite)
+### 1. Backend (FastAPI + PostgreSQL)
 
 ```bash
 cd backend
@@ -135,7 +135,7 @@ The entire UI is responsive and optimized for mobile and tablet:
 
 ## 📦 Tech Stack
 
-**Backend** — Python, FastAPI, Uvicorn, SQLAlchemy, SQLite, sentence-transformers, NumPy, Groq SDK
+**Backend** — Python, FastAPI, Uvicorn, SQLAlchemy, PostgerSQL, sentence-transformers, NumPy, Groq SDK
 
 **Frontend** — React 19, Vite, lucide-react, vanilla CSS (fully responsive)
 

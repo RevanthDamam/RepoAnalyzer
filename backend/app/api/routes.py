@@ -1,12 +1,14 @@
+import json
 import os
-import traceback
-import subprocess
 import shutil
+import subprocess
+import traceback
 from datetime import datetime, timedelta
+from typing import Literal, Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional, List
 
 # Imports from new modular backend package
 from ..database.connection import get_db
@@ -20,6 +22,16 @@ from ..analysis.learning import generate_onboarding_guide
 from ..summarizer.folder_summary import run_static_analysis_pipeline
 from ..embeddings.generator import index_repository_embeddings
 from ..rag.agents import query_repository
+from ..database.connection import SessionLocal
+from ..security import (
+    MAX_FILES_PER_REPOSITORY,
+    MAX_SOURCE_RESPONSE_BYTES,
+    display_repository_path,
+    resolve_local_repository,
+    safe_repo_file,
+    validate_git_source,
+    validate_session_id,
+)
 
 router = APIRouter()
 
@@ -27,13 +39,14 @@ router = APIRouter()
 scan_progress = {}
 
 class ScanRequest(BaseModel):
-    path: str
-    name: Optional[str] = None
-    github_url: Optional[str] = None
+    path: str = Field(..., min_length=1, max_length=2048)
+    name: Optional[str] = Field(default=None, max_length=120)
+    github_url: Optional[str] = Field(default=None, max_length=2048)
+
 
 class QueryRequest(BaseModel):
-    query: str
-    mode: Optional[str] = "single"  # single or multi
+    query: str = Field(..., min_length=1, max_length=4000)
+    mode: Literal["single", "multi"] = "single"
 
 
 def get_session_id(request: Request) -> str:
@@ -42,13 +55,13 @@ def get_session_id(request: Request) -> str:
     Returns HTTP 400 if the header is missing or blank so that session-less
     clients get an explicit, actionable error instead of seeing all data.
     """
-    session_id = request.headers.get("X-Session-ID", "").strip()
-    if not session_id:
+    session_id = request.headers.get("X-Session-ID", "")
+    if not session_id.strip():
         raise HTTPException(
             status_code=400,
-            detail="Missing X-Session-ID header. Each browser tab must supply a session identifier."
+            detail="Missing X-Session-ID header. Each browser tab must supply a session identifier.",
         )
-    return session_id
+    return validate_session_id(session_id)
 
 
 # ── Configurable cleanup window ──────────────────────────────────────────────
@@ -98,11 +111,12 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
     7. AI Summarizations & caching
     8. Generate embeddings (including symbol definitions)
     """
-    db = next(get_db())
+    db = SessionLocal()
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
+        db.close()
         return
-        
+
     try:
         def update_progress(message: str, pct: float):
             scan_progress[repo_id] = {"message": message, "percent": round(pct, 1)}
@@ -111,9 +125,10 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
             print(f"[RepoScan {repo_id}] {message} - {pct:.1f}%")
 
         # 2.0 Git Cloning Check
-        is_git_url = repo_path.startswith("http://") or repo_path.startswith("https://") or repo_path.startswith("git@")
+        is_git_url = repo_path.startswith(("http://", "https://", "git@"))
         if is_git_url:
-            update_progress("Cloning public repository...", 2.0)
+            repo_path = validate_git_source(repo_path)
+            update_progress("Cloning approved public repository...", 2.0)
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             temp_dir = os.path.join(base_dir, "temp_repos", f"repo_{repo_id}").replace("\\", "/")
             os.makedirs(os.path.dirname(temp_dir), exist_ok=True)
@@ -123,11 +138,12 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
                 
             try:
                 subprocess.run(
-                    ["git", "clone", "--depth", "1", repo_path, temp_dir],
+                    ["git", "clone", "--depth", "1", "--", repo_path, temp_dir],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    check=True
+                    check=True,
+                    timeout=120,
                 )
                 repo_path = temp_dir
                 repo.path = temp_dir
@@ -139,9 +155,14 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
                 db.commit()
                 return
 
+        else:
+            repo_path = str(resolve_local_repository(repo_path))
+
         # 1 & 2. Scan & Classify
         update_progress("Crawling files and ranking importance", 10.0)
         scan_results = crawl_repository(repo_path)
+        if len(scan_results["files"]) > MAX_FILES_PER_REPOSITORY:
+            raise ValueError("Repository contains too many analyzable files.")
         repo.folder_structure = scan_results["folder_tree"]
         db.commit()
         
@@ -208,9 +229,11 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         err_msg = f"Scan failed: {str(e)}\n{traceback.format_exc()}"
         print(err_msg)
         repo.status = "failed"
-        repo.error_message = str(e)
+        repo.error_message = "Repository scan failed. Check server logs for details."
         db.commit()
-        scan_progress[repo_id] = {"message": f"failed: {str(e)}", "percent": 0.0}
+        scan_progress[repo_id] = {"message": "failed", "percent": 0.0}
+    finally:
+        db.close()
 
 @router.post("/api/scan")
 def scan_endpoint(
@@ -222,18 +245,19 @@ def scan_endpoint(
     # Purge stale repositories from all sessions before starting a new scan
     cleanup_old_repositories(db)
 
-    is_git_url = req.path.startswith("http://") or req.path.startswith("https://") or req.path.startswith("git@")
-    
+    is_git_url = req.path.startswith(("http://", "https://", "git@"))
+
     if is_git_url:
-        path = req.path
+        path = validate_git_source(req.path)
         name = req.name or req.path.rstrip("/").split("/")[-1].replace(".git", "") or "Git Repo"
-        github_url = req.path
+        github_url = path
     else:
-        path = os.path.abspath(req.path).replace("\\", "/")
-        if not os.path.exists(path):
-            raise HTTPException(status_code=400, detail=f"Path not found: {req.path}")
-        name = req.name or os.path.basename(path) or "Unnamed Repo"
+        path_obj = resolve_local_repository(req.path)
+        path = str(path_obj).replace("\\", "/")
+        name = req.name or path_obj.name or "Unnamed Repo"
         github_url = req.github_url
+        if github_url:
+            github_url = validate_git_source(github_url)
     
     # Check if this session already has the same repository indexed
     repo = db.query(Repository).filter(
@@ -273,7 +297,7 @@ def get_repositories(
         results.append({
             "id": r.id,
             "name": r.name,
-            "path": r.path,
+            "path": display_repository_path(r.path),
             "github_url": r.github_url,
             "status": r.status,
             "error_message": r.error_message,
@@ -313,7 +337,7 @@ def get_repository_details(
     return {
         "id": repo.id,
         "name": repo.name,
-        "path": repo.path,
+        "path": display_repository_path(repo.path),
         "status": repo.status,
         "technologies": repo.technologies,
         "features": repo.features,
@@ -368,13 +392,17 @@ def get_file_content_and_summary(
         raise HTTPException(status_code=404, detail="File not found.")
         
     raw_content = ""
-    full_path = os.path.join(file_record.repository.path, file_record.path)
-    if os.path.exists(full_path):
-        try:
-            with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                raw_content = f.read()
-        except Exception as e:
-            raw_content = f"Failed to read file: {e}"
+    try:
+        full_path = safe_repo_file(file_record.repository.path, file_record.path)
+        if full_path.stat().st_size <= MAX_SOURCE_RESPONSE_BYTES:
+            raw_content = full_path.read_text(encoding="utf-8", errors="ignore")
+        else:
+            with full_path.open("r", encoding="utf-8", errors="ignore") as f:
+                raw_content = f.read(MAX_SOURCE_RESPONSE_BYTES) + "\n[Truncated for safety]"
+    except HTTPException:
+        raise
+    except OSError:
+        raw_content = "Unable to read this file."
             
     # Load associated AST symbols
     file_symbols = db.query(Symbol).filter(Symbol.file_id == file_id).all()
@@ -407,7 +435,7 @@ def query_repo_endpoint(
     session_id: str = Depends(get_session_id)
 ):
     require_repo(repo_id, session_id, db)
-    return query_repository(db, repo_id, req.query, req.mode)
+    return query_repository(db, repo_id, req.query.strip(), req.mode)
 
 # ================= 2.0 ADVANCED ANALYTICAL ROUTES =================
 
@@ -626,7 +654,7 @@ def get_codebase_summary(
 
     # 1. Repo name & path
     context_parts.append(f"Project name: {repo.name}")
-    context_parts.append(f"Local path: {repo.path}")
+    context_parts.append(f"Repository directory: {display_repository_path(repo.path)}")
 
     # 2. Technology stack
     if repo.technologies:
@@ -768,7 +796,8 @@ Rules:
                 raw = raw[4:]
         summary_data = _json.loads(raw)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate summary: {str(e)}")
+        print(f"[summary] generation failed: {e}")
+        raise HTTPException(status_code=502, detail="Summary generation failed. Please retry.") from e
 
     # Cache on repository
     repo.codebase_summary = summary_data

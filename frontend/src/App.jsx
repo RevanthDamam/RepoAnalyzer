@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RepoSelector } from './components/RepoSelector';
 import { Dashboard } from './components/Dashboard';
-import { FileTree } from './components/FileTree';
 import { ChatInterface } from './components/ChatInterface';
 import { Architecture } from './components/Architecture';
 import { Dependencies } from './components/Dependencies';
@@ -10,8 +9,7 @@ import { apiFetch } from './utils/api';
 
 
 import {
-  Bot, Code, RefreshCw,
-  LayoutGrid, Network, GitFork, BookOpen, Settings, ChevronLeft, ChevronRight, Folder
+  Bot, RefreshCw, LayoutGrid, Network, GitFork, ChevronLeft, ChevronRight, Folder
 } from 'lucide-react';
 
 export default function App() {
@@ -27,6 +25,17 @@ export default function App() {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('chat');
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const x = (event.clientX / window.innerWidth - 0.5) * 2;
+      const y = (event.clientY / window.innerHeight - 0.5) * 2;
+      document.documentElement.style.setProperty('--pointer-x', x.toFixed(3));
+      document.documentElement.style.setProperty('--pointer-y', y.toFixed(3));
+    };
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    return () => window.removeEventListener('pointermove', handlePointerMove);
+  }, []);
 
   const fetchRepoDetails = async (repoId) => {
     setLoadingRepo(true);
@@ -97,10 +106,18 @@ export default function App() {
 
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div className="ambient-scene" aria-hidden="true">
+        <span className="ambient-orb ambient-orb-a" />
+        <span className="ambient-orb ambient-orb-b" />
+        <span className="ambient-orb ambient-orb-c" />
+        <span className="ambient-ring ambient-ring-a" />
+        <span className="ambient-ring ambient-ring-b" />
+      </div>
 
       {/* Global Cinematic Header */}
       {selectedRepoId === null && (
-        <header style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <header className="site-header" style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
           <div className="logo-container" style={{ cursor: 'pointer' }} onClick={handleBackToSelector}>
             <span style={{ fontWeight: 800, fontSize: '1.4rem', fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.5px' }}>
               Repo<span style={{ color: 'var(--accent-primary)' }}>Analyzer</span>
@@ -139,7 +156,8 @@ export default function App() {
       {/* Main Workspace Frame */}
       {selectedRepoId === null ? (
         // Project selector dashboard (Centered view)
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4rem 2rem', background: '#060608' }}>
+                  <div className="selection-stage" style={{ flex: 1, overflowY: 'auto', padding: '4rem 2rem', background: '#060608' }}>
+
           <RepoSelector onSelectRepo={handleSelectRepo} />
         </div>
       ) : loadingRepo || !repoDetails ? (

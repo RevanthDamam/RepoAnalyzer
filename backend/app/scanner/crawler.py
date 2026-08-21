@@ -1,6 +1,9 @@
 import os
+from pathlib import Path
+
 from .classifier import score_file
 from .hasher import compute_sha256
+from ..security import MAX_FILE_SIZE_BYTES
 
 # Exclude lists
 IGNORED_DIRS = {
@@ -34,9 +37,13 @@ def crawl_repository(repo_path: str) -> dict:
     files_list = []
     folder_tree = {}
     
-    for root, dirs, files in os.walk(repo_path):
-        # In-place modify dirs to skip ignored directories
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+    repository_root = Path(repo_path).resolve(strict=True)
+    for root, dirs, files in os.walk(repository_root, followlinks=False):
+        # In-place modify dirs to skip ignored directories and symlinked folders.
+        dirs[:] = [
+            d for d in dirs
+            if d not in IGNORED_DIRS and not Path(root, d).is_symlink()
+        ]
         
         # Calculate relative folder path from repository root
         rel_folder = os.path.relpath(root, repo_path)
@@ -48,12 +55,22 @@ def crawl_repository(repo_path: str) -> dict:
             if ext.lower() in IGNORED_EXTS or file.startswith('.'):
                 continue
                 
-            full_path = os.path.join(root, file)
-            rel_path = os.path.relpath(full_path, repo_path).replace("\\", "/")
-            
-            # File metadata
-            file_size = os.path.getsize(full_path)
-            file_hash = compute_sha256(full_path)
+            full_path = Path(root, file)
+            if full_path.is_symlink():
+                continue
+            resolved_path = full_path.resolve()
+            try:
+                resolved_path.relative_to(repository_root)
+            except ValueError:
+                continue
+            rel_path = resolved_path.relative_to(repository_root).as_posix()
+
+            # File metadata. Large files are deliberately skipped to prevent
+            # memory and CPU exhaustion during hashing and AST parsing.
+            file_size = resolved_path.stat().st_size
+            if file_size > MAX_FILE_SIZE_BYTES:
+                continue
+            file_hash = compute_sha256(str(resolved_path))
             score = score_file(rel_path, file)
             
             files_list.append({

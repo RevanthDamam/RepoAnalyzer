@@ -149,6 +149,16 @@ export const RepoSelector = ({ onSelectRepo }) => {
           </span>
         </div>
 
+        <div className="hero-orbit-wrap" aria-hidden="true">
+          <div className="hero-orbit hero-orbit-outer"><span /><span /><span /></div>
+          <div className="hero-orbit hero-orbit-inner"><span /><span /></div>
+          <div className="hero-analysis-core">
+            <div className="core-grid" />
+            <div className="core-mark">RA</div>
+            <div className="core-signal">INDEX / ONLINE</div>
+          </div>
+        </div>
+
         {/* Large Cinematic Title */}
         <h1 style={{
           fontSize: '3.6rem',

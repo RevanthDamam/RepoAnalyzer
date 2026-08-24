@@ -6,7 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+# Groq retired llama-3.1-8b-instant on 2026-08-16. Keep an automatic
+# migration so an old Render environment variable cannot break production.
+GROQ_MODEL_MIGRATIONS = {
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+}
+_requested_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = GROQ_MODEL_MIGRATIONS.get(_requested_model, _requested_model)
 
 def get_groq_client():
     if not GROQ_API_KEY:

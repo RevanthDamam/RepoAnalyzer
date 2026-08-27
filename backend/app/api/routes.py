@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import traceback
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Lock
 from typing import Literal, Optional
 
@@ -404,11 +405,17 @@ def delete_repository(
     session_id: str = Depends(get_session_id)
 ):
     repo = require_repo(repo_id, session_id, db)
+    repo_path = Path(repo.path).resolve()
+    clone_root = (Path(__file__).resolve().parents[2] / "temp_repos").resolve()
+
     db.delete(repo)
     db.commit()
-    if repo_id in scan_progress:
-        del scan_progress[repo_id]
-    return {"message": "Repository deleted"}
+    scan_progress.pop(repo_id, None)
+
+    if repo_path.is_relative_to(clone_root):
+        shutil.rmtree(repo_path, ignore_errors=True)
+
+    return {"message": "Repository deleted", "repo_id": repo_id}
 
 @router.get("/api/repositories/{repo_id}/progress")
 def get_scan_progress(

@@ -96,11 +96,17 @@ export const RepoSelector = ({ onSelectRepo }) => {
   const handleDelete = async (event, repoId) => {
     event.stopPropagation();
     if (!confirm('Delete this index and its analysis data?')) return;
+    setError(null);
     try {
       const res = await apiFetch(`/api/repositories/${repoId}`, { method: 'DELETE' });
-      if (res.ok) setRepos((prev) => prev.filter((repo) => repo.id !== repoId));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Delete failed (${res.status}).`);
+      setRepos((prev) => prev.filter((repo) => repo.id !== repoId));
+      setActivePolls((prev) => ({ ...prev, [repoId]: false }));
+      await fetchRepos();
     } catch (err) {
       console.error('Delete repository failed', err);
+      setError(err.message || 'Unable to delete this repository.');
     }
   };
 

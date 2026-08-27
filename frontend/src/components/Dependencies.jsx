@@ -96,9 +96,9 @@ export const Dependencies = ({ repoId }) => {
     );
 
   return (
-    <div className="workspace-layout" style={{ gridTemplateColumns: '300px 1fr' }}>
+    <div className="workspace-layout dependency-workspace" style={{ gridTemplateColumns: '300px 1fr' }}>
       {/* Sidebar selection lists */}
-      <div className="glass" style={{ padding: '1rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '1rem', height: '480px' }}>
+      <div className="glass dependency-list-panel" style={{ padding: '1rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '1rem', height: '480px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '-0.25rem' }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Import Graph</span>
           <button
@@ -139,9 +139,9 @@ export const Dependencies = ({ repoId }) => {
 
       {/* Dependency details panel */}
       {selectedNode ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="dependency-inspector" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Active Node details banner */}
-          <div className="glass" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', background: 'rgba(99, 102, 241, 0.05)', borderLeft: '4px solid var(--accent-primary)' }}>
+          <div className="glass dependency-banner" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', background: 'rgba(250, 204, 21, 0.05)', borderLeft: '4px solid var(--accent-primary)' }}>
             <h3 style={{ fontFamily: 'Outfit, sans-serif' }}>{selectedNode.filename}</h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.4rem', lineHeight: 1.5 }}>
               {getBriefExplanation(selectedNode.filename, selectedNode.path, selectedNode.summary)}
@@ -152,7 +152,7 @@ export const Dependencies = ({ repoId }) => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div className="dependency-relations" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             {/* Fan Out: Imports List */}
             <div className="glass" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)' }}>
               <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem', marginBottom: '1rem' }}>

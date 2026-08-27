@@ -91,9 +91,9 @@ export const ChatInterface = ({ repoId }) => {
   };
 
   return (
-    <div className="glass main-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="glass main-card chat-shell" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header bar */}
-      <div className="tab-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '1rem', height: '48px', flexShrink: 0 }}>
+      <div className="tab-bar chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '1rem', height: '48px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '1.25rem', color: '#ffffff', fontSize: '0.88rem', fontWeight: 600 }}>
           <Sparkles size={15} style={{ color: '#facc15' }} />
           AI Codebase Assistant
@@ -111,7 +111,7 @@ export const ChatInterface = ({ repoId }) => {
       </div>
 
       {/* Messages */}
-      <div className="tab-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '0', overflowY: 'auto' }}>
+      <div className="tab-content chat-transcript" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '0', overflowY: 'auto' }}>
         {messages.length === 0 ? (
           <div className="empty-chat">
             <div className="empty-chat-icon">
@@ -122,7 +122,7 @@ export const ChatInterface = ({ repoId }) => {
               Queries use a RAG pipeline to search indexed files, folder layouts, and technologies.
               Answers are generated instantly using Groq LLMs.
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+            <div className="chat-prompts" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
               <span className="repo-tag" style={{ background: 'rgba(99,102,241,0.08)', cursor: 'pointer' }} onClick={() => setInput('Does this project use Docker?')}>"Does this project use Docker?"</span>
               <span className="repo-tag" style={{ background: 'rgba(99,102,241,0.08)', cursor: 'pointer' }} onClick={() => setInput('Explain the file structure of this codebase.')}>"Explain the file structure of this codebase."</span>
               <span className="repo-tag" style={{ background: 'rgba(99,102,241,0.08)', cursor: 'pointer' }} onClick={() => setInput('What dependencies are installed?')}>"What dependencies are installed?"</span>
@@ -241,7 +241,7 @@ export const ChatInterface = ({ repoId }) => {
         )}
 
         {/* Input area */}
-        <form onSubmit={handleSend} className="chat-input-row">
+        <form onSubmit={handleSend} className="chat-input-row chat-composer">
           <div className="chat-input-wrapper">
             <input 
               type="text" 

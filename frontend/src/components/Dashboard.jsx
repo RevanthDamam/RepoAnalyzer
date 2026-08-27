@@ -5,15 +5,15 @@ import { apiFetch } from '../utils/api';
 
 // ── Language badge colors ──────────────────────────────────────────────────
 const LANG_COLORS = {
-  'Python':      { bg: 'rgba(59,130,246,0.15)',  border: 'rgba(59,130,246,0.4)',  text: '#93c5fd' },
-  'JavaScript':  { bg: 'rgba(250,204,21,0.12)',  border: 'rgba(250,204,21,0.35)', text: '#fde68a' },
-  'TypeScript':  { bg: 'rgba(99,102,241,0.15)',  border: 'rgba(99,102,241,0.4)',  text: '#c4b5fd' },
-  'CSS':         { bg: 'rgba(20,184,166,0.12)',  border: 'rgba(20,184,166,0.35)', text: '#5eead4' },
+  'Python':      { bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.28)', text: '#fde68a' },
+  'JavaScript':  { bg: 'rgba(250,204,21,0.12)', border: 'rgba(250,204,21,0.35)', text: '#fde68a' },
+  'TypeScript':  { bg: 'rgba(234,179,8,0.12)',  border: 'rgba(234,179,8,0.35)',  text: '#fef08a' },
+  'CSS':         { bg: 'rgba(202,138,4,0.12)',  border: 'rgba(202,138,4,0.35)',  text: '#fef3c7' },
 };
 
 const LANGUAGE_PALETTE = {
-  'Python': '#3b82f6', 'JavaScript': '#facc15', 'TypeScript': '#6366f1',
-  'CSS': '#14b8a6', 'HTML': '#f97316', 'Rust': '#ea580c', 'Go': '#06b6d4', 'Shell': '#22c55e',
+  'Python': '#fde68a', 'JavaScript': '#facc15', 'TypeScript': '#eab308',
+  'CSS': '#ca8a04', 'HTML': '#f59e0b', 'Rust': '#d97706', 'Go': '#facc15', 'Shell': '#a16207',
 };
 
 const TYPE_ICON = {
@@ -178,12 +178,12 @@ function SummaryPanel({ repoId, repoName }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center' }}>
               {summary.request_flow.map((step, i) => (
                 <React.Fragment key={i}>
-                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '4px', color: '#c4b5fd' }}>{step}</span>
+                  <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.24)', borderRadius: '4px', color: '#fde68a' }}>{step}</span>
                   {i < summary.request_flow.length - 1 && <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>→</span>}
                 </React.Fragment>
               ))}
             </div>,
-            '#6366f1'
+            '#facc15'
           )}
 
           {/* Engineering Highlights */}
@@ -194,7 +194,7 @@ function SummaryPanel({ repoId, repoName }) {
                 <li key={i} style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{h}</li>
               ))}
             </ul>,
-            '#22c55e'
+            '#eab308'
           )}
         </div>
       )}
@@ -220,7 +220,7 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
 
   const getLangColor = (lang, index) => {
     if (LANGUAGE_PALETTE[lang]) return LANGUAGE_PALETTE[lang];
-    return ['#a855f7','#ec4899','#f43f5e','#10b981','#84cc16'][index % 5];
+    return ['#fde68a','#facc15','#eab308','#ca8a04','#a16207'][index % 5];
   };
 
   const filesCount = stats?.files_count || 0;

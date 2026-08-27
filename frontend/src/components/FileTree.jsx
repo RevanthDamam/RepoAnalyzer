@@ -117,9 +117,20 @@ const TreeNode = ({ node, depth, selectedFileId, onSelectFile, expandedFolders, 
 
 export const FileTree = ({ files, selectedFileId, onSelectFile }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedFolders, setExpandedFolders] = useState({
-    // Expand root items by default
-  });
+  const [expandedFolders, setExpandedFolders] = useState({});
+
+  useEffect(() => {
+    if (!files.length || searchQuery.trim()) return;
+    setExpandedFolders(prev => {
+      if (Object.keys(prev).length) return prev;
+      const defaults = {};
+      files.forEach(file => {
+        const rootFolder = file.path.split('/')[0];
+        if (file.path.includes('/')) defaults[rootFolder] = true;
+      });
+      return defaults;
+    });
+  }, [files, searchQuery]);
 
   const toggleFolder = (path) => {
     setExpandedFolders(prev => ({
@@ -157,6 +168,7 @@ export const FileTree = ({ files, selectedFileId, onSelectFile }) => {
     <div className="glass explorer-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', border: 'none' }}>
       {/* Header Search */}
       <div className="explorer-header" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem 1rem 0.5rem 1rem' }}>
+        <div className="explorer-toolbar"><span>Source files</span><strong>{files.length}</strong></div>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <Search size={14} style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)' }} />
           <input 

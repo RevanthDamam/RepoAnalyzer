@@ -447,7 +447,7 @@ def get_file_content_and_summary(
                 raw_content = f.read(MAX_SOURCE_RESPONSE_BYTES) + "\n[Truncated for safety]"
     except HTTPException:
         raise
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         raw_content = "Unable to read this file."
             
     # Load associated AST symbols
@@ -618,12 +618,13 @@ def get_repo_manifest(
     }
 
     packages = []
+    source_root = str(ensure_repository_source(repo, db))
 
     # --- Parse requirements.txt ---
-    req_path = os.path.join(repo.path, "requirements.txt")
+    req_path = os.path.join(source_root, "requirements.txt")
     # Also check backend/ subdirectory
     if not os.path.exists(req_path):
-        req_path = os.path.join(repo.path, "backend", "requirements.txt")
+        req_path = os.path.join(source_root, "backend", "requirements.txt")
 
     if os.path.exists(req_path):
         try:
@@ -645,9 +646,9 @@ def get_repo_manifest(
             pass
 
     # --- Parse package.json ---
-    pkg_path = os.path.join(repo.path, "package.json")
+    pkg_path = os.path.join(source_root, "package.json")
     if not os.path.exists(pkg_path):
-        pkg_path = os.path.join(repo.path, "frontend", "package.json")
+        pkg_path = os.path.join(source_root, "frontend", "package.json")
 
     if os.path.exists(pkg_path):
         try:

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Activity, Bot, ChevronLeft, Folder, GitFork, LayoutGrid, Loader2, Network, ShieldCheck } from 'lucide-react';
 import { RepoSelector } from './components/RepoSelector';
 import { Dashboard } from './components/Dashboard';
 import { ChatInterface } from './components/ChatInterface';
@@ -7,276 +8,132 @@ import { Dependencies } from './components/Dependencies';
 import { FilesView } from './components/FilesView';
 import { apiFetch } from './utils/api';
 
-
-import {
-  Bot, RefreshCw,
-  LayoutGrid, Network, GitFork, ChevronLeft, Folder
-} from 'lucide-react';
+const tabs = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid, eyebrow: 'Repository overview', title: 'Understand the system at a glance.', copy: 'Static facts, technology signals, and the AI-generated codebase brief in one view.' },
+  { id: 'architecture', label: 'Architecture', icon: Network, eyebrow: 'Architecture map', title: 'See how the codebase is shaped.', copy: 'Pan the hierarchy, inspect nodes, and follow the structure from root to source.' },
+  { id: 'dependencies', label: 'Dependencies', icon: GitFork, eyebrow: 'Dependency graph', title: 'Trace the inner connections.', copy: 'Explore fan-in, fan-out, and the impact area around every indexed module.' },
+  { id: 'files', label: 'Files', icon: Folder, eyebrow: 'Source explorer', title: 'Browse the source with context.', copy: 'Navigate the repository tree and inspect file facts alongside readable source.' },
+  { id: 'chat', label: 'AI assistant', icon: Bot, eyebrow: 'Repository assistant', title: 'Ask the codebase directly.', copy: 'Use grounded retrieval to get concise answers backed by indexed repository context.' },
+];
 
 export default function App() {
   const [selectedRepoId, setSelectedRepoId] = useState(null);
   const [repoDetails, setRepoDetails] = useState(null);
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [fileDetails, setFileDetails] = useState(null);
-
-  // Navigation tabs for the MAIN central area via vertical sidebar
   const [activeNavTab, setActiveNavTab] = useState('overview');
-
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
-
-  const fetchRepoDetails = async (repoId) => {
-    setLoadingRepo(true);
-    try {
-      const res = await apiFetch(`/api/repositories/${repoId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setRepoDetails(data);
-
-        // Default select file with highest importance
-        if (data.files && data.files.length > 0) {
-          setSelectedFileId(data.files[0].id);
-          fetchFileDetails(repoId, data.files[0].id);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load repo data', e);
-    } finally {
-      setLoadingRepo(false);
-    }
-  };
 
   const fetchFileDetails = async (repoId, fileId) => {
     setLoadingFile(true);
     try {
       const res = await apiFetch(`/api/repositories/${repoId}/file/${fileId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFileDetails(data);
-      }
-    } catch (e) {
-      console.error('Failed to load file details', e);
+      if (res.ok) setFileDetails(await res.json());
+    } catch (error) {
+      console.error('Failed to load file details', error);
     } finally {
       setLoadingFile(false);
     }
   };
 
-  const handleSelectRepo = (repoId) => {
-    setSelectedRepoId(repoId);
-    fetchRepoDetails(repoId);
-    setActiveNavTab('overview');
-  };
-
-  const handleSelectFile = (fileId) => {
-    setSelectedFileId(fileId);
-    if (selectedRepoId) {
-      fetchFileDetails(selectedRepoId, fileId);
+  const fetchRepoDetails = async (repoId) => {
+    setLoadingRepo(true);
+    try {
+      const res = await apiFetch(`/api/repositories/${repoId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setRepoDetails(data);
+      if (data.files?.length) {
+        setSelectedFileId(data.files[0].id);
+        fetchFileDetails(repoId, data.files[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load repository data', error);
+    } finally {
+      setLoadingRepo(false);
     }
   };
 
-  const handleBackToSelector = () => {
+  const openRepository = (repoId) => {
+    setSelectedRepoId(repoId);
+    setActiveNavTab('overview');
+    fetchRepoDetails(repoId);
+  };
+
+  const selectFile = (fileId) => {
+    setSelectedFileId(fileId);
+    if (selectedRepoId) fetchFileDetails(selectedRepoId, fileId);
+  };
+
+  const closeRepository = () => {
     setSelectedRepoId(null);
     setRepoDetails(null);
     setSelectedFileId(null);
     setFileDetails(null);
   };
 
-  return (
-    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+  const activeTab = tabs.find((tab) => tab.id === activeNavTab) || tabs[0];
+  const ActiveIcon = activeTab.icon;
 
-      {/* Global Cinematic Header */}
-      {selectedRepoId === null && (
-        <header style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="logo-container" style={{ cursor: 'pointer' }} onClick={handleBackToSelector}>
-            <span style={{ fontWeight: 800, fontSize: '1.4rem', fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.5px' }}>
-              Repo<span style={{ color: 'var(--accent-primary)' }}>Analyzer</span>
-            </span>
-          </div>
-
-          {/* Mockup Middle Nav Links */}
-          <div style={{ display: 'flex', gap: '2rem', fontSize: '0.82rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--text-secondary)' }}>
-            <span style={{ color: 'var(--accent-primary)', borderBottom: '2px solid var(--accent-primary)', paddingBottom: '0.25rem' }}>SYSTEM</span>
-            <span style={{ cursor: 'pointer' }} onClick={() => window.open('https://github', '_blank')}>GITHUB</span>
-            <span style={{ cursor: 'pointer' }}>DOCS</span>
-            <span style={{ cursor: 'pointer' }}>ABOUT</span>
-          </div>
-
-          {/* Right Action buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>SIGN IN</span>
-            <button style={{
-              background: 'var(--accent-primary)',
-              border: 'none',
-              color: '#000',
-              padding: '0.5rem 1.25rem',
-              borderRadius: '4px',
-              fontWeight: 700,
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              boxShadow: 'var(--shadow-glow)',
-              fontFamily: 'Outfit, sans-serif'
-            }}>
-              GET STARTED
-            </button>
-          </div>
+  if (selectedRepoId === null) {
+    return (
+      <div className="app-shell public-shell">
+        <header className="public-nav">
+          <button className="brand-lockup" type="button" onClick={closeRepository} aria-label="Go to RepoAnalyzer home">
+            <span className="brand-mark">RA</span>
+            <span><strong>RepoAnalyzer</strong><small>Code intelligence workspace</small></span>
+          </button>
+          <nav className="public-links" aria-label="Primary navigation"><span>How it works</span><span>Signals</span><span>Documentation</span></nav>
+          <div className="public-nav-meta"><span className="status-dot" /> No sign-in required <span className="nav-divider" /><span>Local-first analysis</span></div>
         </header>
-      )}
+        <RepoSelector onSelectRepo={openRepository} />
+      </div>
+    );
+  }
 
-      {/* Main Workspace Frame */}
-      {selectedRepoId === null ? (
-        // Project selector dashboard (Centered view)
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4rem 2rem', background: '#060608' }}>
-          <RepoSelector onSelectRepo={handleSelectRepo} />
+  if (loadingRepo || !repoDetails) {
+    return <div className="app-shell loading-shell"><Loader2 className="animate-spin" size={28} /><p>Preparing your analysis workspace…</p></div>;
+  }
+
+  return (
+    <div className="app-shell workspace-shell">
+      <aside className="workspace-rail">
+        <div className="rail-top">
+          <button className="rail-brand" type="button" onClick={closeRepository} aria-label="Return to repositories"><span className="brand-mark">RA</span></button>
+          <div className="rail-rule" />
+          <div className="rail-label">Workspace</div>
+          <nav className="rail-nav" aria-label="Analysis views">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return <button key={tab.id} className={`rail-link ${activeNavTab === tab.id ? 'active' : ''}`} type="button" onClick={() => setActiveNavTab(tab.id)} title={tab.label}><Icon size={17} /><span>{tab.label}</span></button>;
+            })}
+          </nav>
         </div>
-      ) : loadingRepo || !repoDetails ? (
-        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#060608', gap: '1rem' }}>
-          <RefreshCw className="animate-spin" size={36} style={{ color: 'var(--accent-primary)' }} />
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Compiling static AST dependency indexes...</p>
-        </div>
-      ) : (
-        // Upgraded workspace layout with horizontal top navigation header
-        <div className="workspace-container">
+        <div className="rail-bottom"><div className="rail-signal"><span /><span /><span /></div><small>Session secured</small><button className="rail-home" type="button" onClick={closeRepository}><ChevronLeft size={15} /> Repositories</button></div>
+      </aside>
 
-          {/* Top Horizontal workspace header */}
-          <header className="workspace-header">
-            <div className="workspace-logo-area" onClick={handleBackToSelector} style={{ border: 'none', background: 'none' }}>
-              <div className="workspace-back-btn" title="Back to project list">
-                <ChevronLeft size={16} />
-              </div>
-            </div>
+      <main className="workspace-main">
+        <header className="workspace-topbar">
+          <div className="breadcrumb"><span className="breadcrumb-muted">Repositories</span><ChevronLeft size={13} /><strong>{repoDetails.name}</strong></div>
+          <div className="topbar-meta"><span><ShieldCheck size={14} /> Session protected</span><span><Activity size={14} /> Index {repoDetails.status === 'completed' ? 'ready' : repoDetails.status}</span></div>
+        </header>
 
-            {/* Horizontal navigation tabs with active line indicator animation */}
-            <div className="workspace-tabs">
-              <div
-                className={`workspace-tab ${activeNavTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveNavTab('overview')}
-              >
-                <LayoutGrid size={16} />
-                <span>Overview</span>
-              </div>
-
-              <div
-                className={`workspace-tab ${activeNavTab === 'architecture' ? 'active' : ''}`}
-                onClick={() => setActiveNavTab('architecture')}
-              >
-                <Network size={16} />
-                <span>Architecture</span>
-              </div>
-
-              <div
-                className={`workspace-tab ${activeNavTab === 'dependencies' ? 'active' : ''}`}
-                onClick={() => setActiveNavTab('dependencies')}
-              >
-                <GitFork size={16} />
-                <span>Dependencies</span>
-              </div>
-
-              <div
-                className={`workspace-tab ${activeNavTab === 'files' ? 'active' : ''}`}
-                onClick={() => setActiveNavTab('files')}
-              >
-                <Folder size={16} />
-                <span>Files</span>
-              </div>
-
-              <div
-                className={`workspace-tab ${activeNavTab === 'chat' ? 'active' : ''}`}
-                onClick={() => setActiveNavTab('chat')}
-              >
-                <Bot size={16} />
-                <span>AI Chat</span>
-              </div>
-            </div>
-
-            <div className="workspace-header-right" />
+        <div className="workspace-body">
+          <header className="view-heading">
+            <div className="view-title-group"><div className="view-icon"><ActiveIcon size={18} /></div><div><span className="section-kicker">{activeTab.eyebrow}</span><h1>{activeTab.title}</h1><p>{activeTab.copy}</p></div></div>
+            <div className="repo-context"><span className="context-label">Indexed target</span><strong>{repoDetails.name}</strong><small>{repoDetails.files?.length || 0} source files</small></div>
           </header>
 
-          {/* Main workspace layout: Tab Content (Full Width) */}
-          <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-
-            {/* 2. Middle Content Pane (Tab Content) */}
-            <div className="workspace-content" style={activeNavTab === 'architecture' ? { padding: '2rem', overflow: 'hidden', gap: 0 } : {}}>
-
-              {/* Headline Banner based on active Nav Tab */}
-              {activeNavTab === 'overview' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <span className="repo-tag" style={{ alignSelf: 'flex-start', color: 'var(--accent-primary)', borderColor: 'rgba(250,204,21,0.2)', background: 'rgba(250,204,21,0.05)', fontSize: '0.72rem', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 700 }}>Excellent structural integrity confirmed</span>
-                  <h1 style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', lineHeight: 1.1 }}>Deconstruct the <span className="text-gradient">codebase pulse.</span></h1>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '600px', margin: 0 }}>Static fact extraction, cyclomatic branch analysis, and intent-based RAG search engines mapped instantly.</p>
-                </div>
-              )}
-              {activeNavTab === 'chat' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <span className="repo-tag" style={{ alignSelf: 'flex-start', color: 'var(--accent-primary)', borderColor: 'rgba(250,204,21,0.2)', background: 'rgba(250,204,21,0.05)', fontSize: '0.72rem', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 700 }}>AI RAG Assistant</span>
-                  <h1 style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', lineHeight: 1.1 }}>Ask the <span className="text-gradient">repository agent.</span></h1>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '600px', margin: 0 }}>Query semantic code details, index hierarchies, and get instant explanations.</p>
-                </div>
-              )}
-              {activeNavTab === 'architecture' && null}
-              {activeNavTab === 'dependencies' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <span className="repo-tag" style={{ alignSelf: 'flex-start', color: 'var(--accent-primary)', borderColor: 'rgba(250,204,21,0.2)', background: 'rgba(250,204,21,0.05)', fontSize: '0.72rem', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 700 }}>Interactive Dependency Graph</span>
-                  <h1 style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', lineHeight: 1.1 }}>Visualize the <span className="text-gradient" style={{ fontStyle: 'italic' }}>inner pulse.</span></h1>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '600px', margin: 0 }}>Trace directed file imports. Understand which components depend on each other and perform risk assessments.</p>
-                </div>
-              )}
-              {activeNavTab === 'files' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <span className="repo-tag" style={{ alignSelf: 'flex-start', color: 'var(--accent-primary)', borderColor: 'rgba(250,204,21,0.2)', background: 'rgba(250,204,21,0.05)', fontSize: '0.72rem', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 700 }}>EXPLORER & FILE FACT SHEET</span>
-                  <h1 style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'Outfit, sans-serif', color: '#ffffff', lineHeight: 1.1 }}>Browse project <span className="text-gradient">files.</span></h1>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '600px', margin: 0 }}>Navigate the directory tree and analyze static file details, complexity, and source code side-by-side.</p>
-                </div>
-              )}
-
-              {/* Mount active navigation subcomponent */}
-              <div style={{ flex: 1, minHeight: 0, height: '100%' }}>
-                {activeNavTab === 'overview' && (
-                  <Dashboard
-                    stats={repoDetails.statistics}
-                    technologies={repoDetails.technologies}
-                    repoId={repoDetails.id}
-                    repoName={repoDetails.name}
-                  />
-                )}
-                {activeNavTab === 'chat' && (
-                  <ChatInterface repoId={repoDetails.id} />
-                )}
-                {activeNavTab === 'architecture' && (
-                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <Architecture
-                      repoId={repoDetails.id}
-                      selectedFileId={selectedFileId}
-                      fileDetails={fileDetails}
-                      loadingFile={loadingFile}
-                      onSelectFile={handleSelectFile}
-                      files={repoDetails.files}
-                      setActiveNavTab={setActiveNavTab}
-                    />
-                  </div>
-                )}
-                {activeNavTab === 'dependencies' && (
-                  <Dependencies repoId={repoDetails.id} />
-                )}
-                {activeNavTab === 'files' && (
-                  <FilesView
-                    files={repoDetails.files}
-                    selectedFileId={selectedFileId}
-                    fileDetails={fileDetails}
-                    loadingFile={loadingFile}
-                    onSelectFile={handleSelectFile}
-                  />
-                )}
-              </div>
-
-            </div>
-
-            {/* Right Pane removed from global workspace to only render inside Architecture Tab */}
-
-
-          </div>
-
+          <section className={`workspace-view view-${activeNavTab}`}>
+            {activeNavTab === 'overview' && <Dashboard stats={repoDetails.statistics} technologies={repoDetails.technologies} repoId={repoDetails.id} repoName={repoDetails.name} />}
+            {activeNavTab === 'chat' && <ChatInterface repoId={repoDetails.id} />}
+            {activeNavTab === 'architecture' && <Architecture fileDetails={fileDetails} loadingFile={loadingFile} onSelectFile={selectFile} files={repoDetails.files} setActiveNavTab={setActiveNavTab} />}
+            {activeNavTab === 'dependencies' && <Dependencies repoId={repoDetails.id} />}
+            {activeNavTab === 'files' && <FilesView files={repoDetails.files} selectedFileId={selectedFileId} fileDetails={fileDetails} loadingFile={loadingFile} onSelectFile={selectFile} />}
+          </section>
         </div>
-      )}
+      </main>
     </div>
   );
 }

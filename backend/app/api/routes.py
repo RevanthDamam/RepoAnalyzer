@@ -215,7 +215,11 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         update_progress("Crawling files and ranking importance", 10.0)
         existing_files = {f.path: f for f in db.query(File).filter(File.repo_id == repo.id).all()}
         stage_started = time.perf_counter()
-        scan_results = crawl_repository(repo_path, cached_files=existing_files)
+        scan_results = crawl_repository(
+            repo_path,
+            cached_files=existing_files,
+            progress_callback=update_progress,
+        )
         scan_metrics["crawl_seconds"] = round(time.perf_counter() - stage_started, 4)
         if len(scan_results["files"]) > MAX_FILES_PER_REPOSITORY:
             raise ValueError("Repository contains too many analyzable files.")

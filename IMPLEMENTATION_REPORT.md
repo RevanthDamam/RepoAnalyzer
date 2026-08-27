@@ -53,6 +53,8 @@ Exact retrieval is bounded at the database query level across file paths, filena
 
 Existing `message` and `percent` progress fields remain unchanged. Progress payloads now additionally expose metrics such as `files_total`, `files_changed`, `files_skipped`, `files_processed`, `symbols_changed`, `symbols_total`, `embeddings_created`, `embeddings_reused`, stage timings, and total duration. Repository list/detail responses add the additive `embedding_status` field. Static completion is persisted before embeddings begin, while the final progress record includes the complete timing and work counters.
 
+The crawler now emits heartbeat messages while walking and hashing large repositories, including a final `Crawling complete` message at 15 percent. This prevents the initial 10-percent label from appearing frozen and lets cancellation be observed during discovery. The heartbeat interval is configurable with `CRAWL_PROGRESS_INTERVAL_SECONDS` and defaults to 0.5 seconds. A local reproduction against the reported public `PDF_Reader_RAG` repository discovered 24 analyzable files in 0.0036 seconds, indicating that a deployment showing a prolonged 10-percent state should be restarted onto the latest commit and checked for runtime logs or a stale worker.
+
 ## Measurements
 
 The benchmark was run locally on the final implementation using [`bench_incremental_indexing.py`][6]. It creates 80 small Python files plus a deterministic 258,818-byte source file requested at 12,000 lines, uses an in-process fake embedding model to exclude model-download and network variance, and measures the same discovery, persistence, static, dependency, and embedding orchestration used by the application. These are observed sandbox measurements, not production capacity guarantees.
@@ -72,6 +74,7 @@ Startup migration remains lightweight and backward-compatible. Existing database
 | Variable | Default | Purpose |
 |---|---:|---|
 | `STRICT_HASHING` | `false` | Recompute SHA-256 on every analyzable file when set to `true`, `1`, or `yes` |
+| `CRAWL_PROGRESS_INTERVAL_SECONDS` | `0.5` | Minimum interval between crawler heartbeat progress updates |
 | `STATIC_ANALYSIS_BATCH_SIZE` | `100` | Number of changed files between static-analysis commits |
 | `EMBEDDING_BATCH_SIZE` | `64` | Number of texts per embedding-generation/persistence batch |
 | `EMBEDDING_MODEL_BATCH_SIZE` | `32` | Number of texts passed to the local model per encode call |
@@ -99,3 +102,4 @@ The in-memory cancellation set remains process-local, as before. Batch commits m
 [5]: backend/app/embeddings/generator.py "Content-hash-aware, batched, resumable embedding persistence"
 [6]: backend/bench_incremental_indexing.py "Deterministic incremental indexing benchmark harness"
 [7]: backend/.env.example "Deployment and performance environment settings"
+[8]: backend/app/scanner/crawler.py "Crawler heartbeat progress and cancellation checkpoints"

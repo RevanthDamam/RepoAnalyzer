@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 from .classifier import score_file
@@ -27,7 +28,7 @@ IGNORED_EXTS = {
     '.db', '.sqlite', '.sqlite3', '.pyc', '.pyd'
 }
 
-def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None) -> dict:
+def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None, progress_callback=None) -> dict:
     """
     Stage 1: Walks repository files, handles excludes, compiles folder tree mapping.
     """
@@ -41,6 +42,9 @@ def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None) -> 
         strict_hashing = os.getenv("STRICT_HASHING", "false").lower() in {"1", "true", "yes"}
     
     repository_root = Path(repo_path).resolve(strict=True)
+    files_examined = 0
+    last_progress = time.monotonic()
+    progress_interval = max(0.1, float(os.getenv("CRAWL_PROGRESS_INTERVAL_SECONDS", "0.5")))
     for root, dirs, files in os.walk(repository_root, followlinks=False):
         # In-place modify dirs to skip ignored directories and symlinked folders.
         dirs[:] = [
@@ -54,6 +58,7 @@ def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None) -> 
             rel_folder = ""
             
         for file in files:
+            files_examined += 1
             name, ext = os.path.splitext(file)
             if ext.lower() in IGNORED_EXTS or file.startswith('.'):
                 continue
@@ -103,6 +108,17 @@ def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None) -> 
                     curr[part] = {}
                 curr = curr[part]
             curr[parts[-1]] = "file"
+
+            now = time.monotonic()
+            if progress_callback and now - last_progress >= progress_interval:
+                progress_callback(
+                    f"Crawled {files_examined} filesystem entries; indexed {len(files_list)} files",
+                    min(14.9, 10.0 + (files_examined / max(1, int(os.getenv("MAX_FILES_PER_REPOSITORY", "10000"))) * 4.9)),
+                )
+                last_progress = now
+
+    if progress_callback:
+        progress_callback(f"Crawling complete: {len(files_list)} files discovered", 15.0)
 
     return {
         "files": files_list,

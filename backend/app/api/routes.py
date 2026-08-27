@@ -102,6 +102,38 @@ def require_repo(repo_id: int, session_id: str, db: Session) -> Repository:
         raise HTTPException(status_code=404, detail="Repository not found.")
     return repo
 
+def ensure_repository_source(repo: Repository, db: Session) -> Path:
+    """Return a live repository directory, restoring approved Git sources after restart."""
+    try:
+        source = Path(repo.path).resolve(strict=True)
+        if source.is_dir():
+            return source
+    except (OSError, RuntimeError):
+        pass
+
+    if not repo.github_url:
+        raise HTTPException(status_code=404, detail="Repository source is no longer available.")
+
+    source_url = validate_git_source(repo.github_url)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    temp_dir = os.path.join(base_dir, "temp_repos", f"repo_{repo.id}").replace("\\", "/")
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    os.makedirs(os.path.dirname(temp_dir), exist_ok=True)
+
+    subprocess.run(
+        ["git", "clone", "--depth", "1", "--", source_url, temp_dir],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+    repo.path = temp_dir
+    db.commit()
+    return Path(temp_dir).resolve(strict=True)
+
+
 def bg_scan_repo_v2(repo_id: int, repo_path: str):
     """
     Background thread running the upgraded fact-graph codebase scanner:
@@ -406,7 +438,8 @@ def get_file_content_and_summary(
         
     raw_content = ""
     try:
-        full_path = safe_repo_file(file_record.repository.path, file_record.path)
+        source_root = ensure_repository_source(file_record.repository, db)
+        full_path = safe_repo_file(source_root, file_record.path)
         if full_path.stat().st_size <= MAX_SOURCE_RESPONSE_BYTES:
             raw_content = full_path.read_text(encoding="utf-8", errors="ignore")
         else:

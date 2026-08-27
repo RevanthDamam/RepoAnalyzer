@@ -73,11 +73,14 @@ const CodeHighlight = ({ code, extension }) => {
   );
 };
 
-export const FilesView = ({ files, selectedFileId, fileDetails, loadingFile, onSelectFile }) => {
+export const FilesView = ({ files, selectedFileId, fileDetails, loadingFile, onSelectFile, onRetryFile }) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  const sourceText = fileDetails?.raw_content || fileDetails?.raw_content_compressed || '';
+  const sourceUnavailable = sourceText === 'Unable to read this file.';
+
   return (
-    <div style={{ display: 'flex', gap: '2rem', height: '100%', minHeight: 0, width: '100%' }}>
+    <div className="files-workspace" style={{ display: 'flex', gap: '2rem', height: '100%', minHeight: 0, width: '100%' }}>
       <div style={{
         width: isSidebarCollapsed ? '0px' : '280px', height: '100%', flexShrink: 0,
         transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)', position: 'relative',
@@ -100,15 +103,17 @@ export const FilesView = ({ files, selectedFileId, fileDetails, loadingFile, onS
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, paddingRight: '1rem' }}>
+      <div className="source-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, paddingRight: '1rem' }}>
         {loadingFile || !fileDetails ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', minHeight: '200px' }}>
             <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)' }} />
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>Select a file from the explorer on the left to view its source code...</p>
           </div>
+        ) : sourceUnavailable ? (
+          <div className="source-empty-state"><div className="source-empty-icon">!</div><strong>Source temporarily unavailable</strong><p>The indexed metadata is still available, but the repository source directory is not reachable. Restore the approved source and try again.</p>{onRetryFile && <button type="button" className="source-retry-button" onClick={onRetryFile}>Try loading source again</button>}</div>
         ) : (
           <div style={{ flex: 1, height: '100%', minHeight: 0, paddingBottom: '1rem' }}>
-            <CodeHighlight code={fileDetails.raw_content || fileDetails.raw_content_compressed || '// Empty file'} extension={fileDetails.extension || `.${fileDetails.filename.split('.').pop()}`} />
+            <CodeHighlight code={sourceText || '// Empty file'} extension={fileDetails.extension || `.${fileDetails.filename.split('.').pop()}`} />
           </div>
         )}
       </div>

@@ -8,6 +8,16 @@ import { Dependencies } from './components/Dependencies';
 import { FilesView } from './components/FilesView';
 import { apiFetch } from './utils/api';
 
+const RepoLogo = ({ compact = false }) => (
+  <span className={`repo-logo${compact ? ' compact' : ''}`} aria-hidden="true">
+    <svg viewBox="0 0 48 48" fill="none">
+      <path d="M24 6 38 14v16L24 38 10 30V14L24 6Z" stroke="currentColor" strokeWidth="2" />
+      <path d="m14 17 10 6 10-6M24 23v11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="24" cy="23" r="3.5" fill="currentColor" />
+    </svg>
+  </span>
+);
+
 const tabs = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid, eyebrow: 'Repository overview', title: 'Understand the system at a glance.', copy: 'Static facts, technology signals, and the AI-generated codebase brief in one view.' },
   { id: 'architecture', label: 'Architecture', icon: Network, eyebrow: 'Architecture map', title: 'See how the codebase is shaped.', copy: 'Pan the hierarchy, inspect nodes, and follow the structure from root to source.' },
@@ -23,13 +33,19 @@ export default function App() {
   const [fileDetails, setFileDetails] = useState(null);
   const [activeNavTab, setActiveNavTab] = useState('overview');
   const [loadingRepo, setLoadingRepo] = useState(false);
+  const [repoError, setRepoError] = useState(null);
   const [loadingFile, setLoadingFile] = useState(false);
 
   const fetchFileDetails = async (repoId, fileId) => {
     setLoadingFile(true);
     try {
       const res = await apiFetch(`/api/repositories/${repoId}/file/${fileId}`);
-      if (res.ok) setFileDetails(await res.json());
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setFileDetails({ id: fileId, filename: 'Source unavailable', extension: '', raw_content: 'Unable to read this file.', error: body.detail || `Source request failed (${res.status}).` });
+        return;
+      }
+      setFileDetails(await res.json());
     } catch (error) {
       console.error('Failed to load file details', error);
     } finally {
@@ -41,8 +57,12 @@ export default function App() {
     setLoadingRepo(true);
     try {
       const res = await apiFetch(`/api/repositories/${repoId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Repository request failed (${res.status}).`);
+      }
       const data = await res.json();
+      setRepoError(null);
       setRepoDetails(data);
       if (data.files?.length) {
         setSelectedFileId(data.files[0].id);
@@ -50,6 +70,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to load repository data', error);
+      setRepoError(error.message || 'Unable to load this repository.');
     } finally {
       setLoadingRepo(false);
     }
@@ -69,6 +90,7 @@ export default function App() {
   const closeRepository = () => {
     setSelectedRepoId(null);
     setRepoDetails(null);
+    setRepoError(null);
     setSelectedFileId(null);
     setFileDetails(null);
   };
@@ -81,7 +103,7 @@ export default function App() {
       <div className="app-shell public-shell">
         <header className="public-nav">
           <button className="brand-lockup" type="button" onClick={closeRepository} aria-label="Go to RepoAnalyzer home">
-            <span className="brand-mark">RA</span>
+            <RepoLogo />
             <span><strong>RepoAnalyzer</strong><small>Code intelligence workspace</small></span>
           </button>
           <nav className="public-links" aria-label="Primary navigation"><span>How it works</span><span>Signals</span><span>Documentation</span></nav>
@@ -92,15 +114,19 @@ export default function App() {
     );
   }
 
-  if (loadingRepo || !repoDetails) {
-    return <div className="app-shell loading-shell"><Loader2 className="animate-spin" size={28} /><p>Preparing your analysis workspace…</p></div>;
+  if (loadingRepo) {
+    return <div className="app-shell loading-shell"><Loader2 className="animate-spin" size={30} /><p>Preparing your analysis workspace…</p><span>Loading repository metadata and the first source file</span></div>;
+  }
+
+  if (repoError || !repoDetails) {
+    return <div className="app-shell loading-shell error-shell"><div className="error-mark">!</div><h1>Workspace unavailable</h1><p>{repoError || 'The repository could not be loaded.'}</p><div><button type="button" className="primary-button" onClick={() => selectedRepoId && fetchRepoDetails(selectedRepoId)}>Try again</button><button type="button" className="secondary-button" onClick={closeRepository}>Back to repositories</button></div></div>;
   }
 
   return (
     <div className="app-shell workspace-shell">
       <aside className="workspace-rail">
         <div className="rail-top">
-          <button className="rail-brand" type="button" onClick={closeRepository} aria-label="Return to repositories"><span className="brand-mark">RA</span></button>
+          <button className="rail-brand" type="button" onClick={closeRepository} aria-label="Return to repositories"><RepoLogo compact /></button>
           <div className="rail-rule" />
           <div className="rail-label">Workspace</div>
           <nav className="rail-nav" aria-label="Analysis views">
@@ -130,7 +156,7 @@ export default function App() {
             {activeNavTab === 'chat' && <ChatInterface repoId={repoDetails.id} />}
             {activeNavTab === 'architecture' && <Architecture fileDetails={fileDetails} loadingFile={loadingFile} onSelectFile={selectFile} files={repoDetails.files} setActiveNavTab={setActiveNavTab} />}
             {activeNavTab === 'dependencies' && <Dependencies repoId={repoDetails.id} />}
-            {activeNavTab === 'files' && <FilesView files={repoDetails.files} selectedFileId={selectedFileId} fileDetails={fileDetails} loadingFile={loadingFile} onSelectFile={selectFile} />}
+            {activeNavTab === 'files' && <FilesView files={repoDetails.files} selectedFileId={selectedFileId} fileDetails={fileDetails} loadingFile={loadingFile} onSelectFile={selectFile} onRetryFile={() => selectedRepoId && selectedFileId && fetchFileDetails(selectedRepoId, selectedFileId)} />}
           </section>
         </div>
       </main>

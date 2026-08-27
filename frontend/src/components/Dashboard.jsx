@@ -99,7 +99,7 @@ function SummaryPanel({ repoId, repoName }) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="summary-panel-content" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header: project name + regenerate */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
         <div>
@@ -244,18 +244,18 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
   });
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', width: '100%', minHeight: '580px' }}>
+    <div className="overview-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', width: '100%', minHeight: '580px' }}>
 
       {/* ── LEFT: AI Codebase Summary ── */}
-      <div className="glass" style={{ padding: '1.75rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="glass overview-summary-card" style={{ padding: '1.75rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <SummaryPanel repoId={repoId} repoName={repoName} />
       </div>
 
       {/* ── RIGHT: Files + Languages + Manifest ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="overview-side-stack" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
         {/* Total Files */}
-        <div className="glass stat-card glow-hover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderRadius: 'var(--border-radius-md)', borderLeft: '3px solid var(--accent-primary)' }}>
+        <div className="glass stat-card metric-card glow-hover" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderRadius: 'var(--border-radius-md)', borderLeft: '3px solid var(--accent-primary)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
             <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Total Files Indexed</span>
             <span style={{ fontSize: '2.2rem', fontWeight: '800', color: '#ffffff', fontFamily: 'Outfit, sans-serif', lineHeight: 1 }}>{filesCount.toLocaleString()}</span>
@@ -266,7 +266,7 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
         </div>
 
         {/* Languages */}
-        <div className="glass" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div className="glass stack-card language-card" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: '#ffffff', fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
             <Cpu size={15} style={{ color: 'var(--accent-primary)' }} />
             Languages & Tech Stack
@@ -297,7 +297,7 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
         </div>
 
         {/* Libraries & Frameworks */}
-        <div className="glass" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1 }}>
+        <div className="glass stack-card manifest-card" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: '#ffffff', fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
               <Layers size={15} style={{ color: 'var(--accent-primary)' }} />

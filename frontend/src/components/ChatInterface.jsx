@@ -91,7 +91,7 @@ export const ChatInterface = ({ repoId }) => {
   };
 
   return (
-    <div className="glass main-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="glass main-card chat-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header bar */}
       <div className="tab-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '1rem', height: '48px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '1.25rem', color: '#ffffff', fontSize: '0.88rem', fontWeight: 600 }}>

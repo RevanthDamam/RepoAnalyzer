@@ -62,7 +62,7 @@ export const Dependencies = ({ repoId }) => {
 
   if (loading) {
     return (
-      <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+      <div className="dependency-loading" style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
         <RefreshCw size={20} className="animate-spin" style={{ color: '#facc15' }} />
         Loading dependency graph...
       </div>
@@ -71,7 +71,7 @@ export const Dependencies = ({ repoId }) => {
 
   if (rebuilding) {
     return (
-      <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+      <div className="dependency-loading" style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
         <RefreshCw size={20} className="animate-spin" style={{ color: '#facc15' }} />
         <span>Running static AST import analysis...</span>
         <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Parsing import statements across all files</span>
@@ -96,9 +96,9 @@ export const Dependencies = ({ repoId }) => {
     );
 
   return (
-    <div className="workspace-layout" style={{ gridTemplateColumns: '300px 1fr' }}>
+    <div className="workspace-layout dependency-page" style={{ gridTemplateColumns: '300px 1fr' }}>
       {/* Sidebar selection lists */}
-      <div className="glass" style={{ padding: '1rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '1rem', height: '480px' }}>
+      <div className="glass dependency-sidebar" style={{ padding: '1rem', borderRadius: 'var(--border-radius-md)', display: 'flex', flexDirection: 'column', gap: '1rem', height: '480px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '-0.25rem' }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Import Graph</span>
           <button
@@ -141,7 +141,7 @@ export const Dependencies = ({ repoId }) => {
       {selectedNode ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {/* Active Node details banner */}
-          <div className="glass" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', background: 'rgba(99, 102, 241, 0.05)', borderLeft: '4px solid var(--accent-primary)' }}>
+          <div className="glass dependency-detail-banner" style={{ padding: '1.25rem', borderRadius: 'var(--border-radius-md)', background: 'rgba(99, 102, 241, 0.05)', borderLeft: '4px solid var(--accent-primary)' }}>
             <h3 style={{ fontFamily: 'Outfit, sans-serif' }}>{selectedNode.filename}</h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.4rem', lineHeight: 1.5 }}>
               {getBriefExplanation(selectedNode.filename, selectedNode.path, selectedNode.summary)}

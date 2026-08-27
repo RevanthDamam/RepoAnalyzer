@@ -96,11 +96,12 @@ export default function App() {
   };
 
   return (
-    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="app-container app-shell" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
       {/* Global Cinematic Header */}
       {selectedRepoId === null && (
-        <header style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <header className="site-header" style={{ height: '72px', flexShrink: 0, padding: '0 2.5rem', background: '#08080c', borderBottom: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
           <div className="logo-container" style={{ cursor: 'pointer' }} onClick={handleBackToSelector}>
             <span style={{ fontWeight: 800, fontSize: '1.4rem', fontFamily: 'Outfit, sans-serif', color: '#ffffff', letterSpacing: '-0.5px' }}>
               Repo<span style={{ color: 'var(--accent-primary)' }}>Analyzer</span>
@@ -139,7 +140,8 @@ export default function App() {
       {/* Main Workspace Frame */}
       {selectedRepoId === null ? (
         // Project selector dashboard (Centered view)
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4rem 2rem', background: '#060608' }}>
+                  <div className="selection-stage" style={{ flex: 1, overflowY: 'auto', padding: '4rem 2rem', background: '#060608' }}>
+
           <RepoSelector onSelectRepo={handleSelectRepo} />
         </div>
       ) : loadingRepo || !repoDetails ? (
@@ -154,8 +156,15 @@ export default function App() {
           {/* Top Horizontal workspace header */}
           <header className="workspace-header">
             <div className="workspace-logo-area" onClick={handleBackToSelector} style={{ border: 'none', background: 'none' }}>
-              <div className="workspace-back-btn" title="Back to project list">
+              <div className="workspace-back-btn" title="Back to project list" aria-label="Back to project list">
                 <ChevronLeft size={16} />
+              </div>
+              <div className="workspace-brand-lockup">
+                <span className="workspace-brand-mark">RA</span>
+                <span className="workspace-brand-copy">
+                  <strong>RepoAnalyzer</strong>
+                  <small>{repoDetails.name}</small>
+                </span>
               </div>
             </div>
 
@@ -202,7 +211,9 @@ export default function App() {
               </div>
             </div>
 
-            <div className="workspace-header-right" />
+            <div className="workspace-header-right">
+              <span className="workspace-health"><span /> Index synchronized</span>
+            </div>
           </header>
 
           {/* Main workspace layout: Tab Content (Full Width) */}

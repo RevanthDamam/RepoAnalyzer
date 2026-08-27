@@ -123,9 +123,9 @@ export const RepoSelector = ({ onSelectRepo }) => {
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '3rem', width: '100%' }}>
+    <div className="selector-page" style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '3rem', width: '100%' }}>
       {/* Indexer Setup Mockup View */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="selector-hero" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         
         {/* Pill Badge */}
         <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -150,7 +150,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
         </div>
 
         {/* Large Cinematic Title */}
-        <h1 style={{
+        <h1 className="selector-title" style={{
           fontSize: '3.6rem',
           fontWeight: 800,
           fontFamily: 'Outfit, sans-serif',
@@ -188,11 +188,13 @@ export const RepoSelector = ({ onSelectRepo }) => {
             </div>
           )}
 
-          <form onSubmit={handleScan} style={{ width: '100%', maxWidth: '720px', margin: '0 auto' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: '#0a0a0d',
+          <form className="scan-console" onSubmit={handleScan} style={{ width: '100%', maxWidth: '720px', margin: '0 auto' }}>
+            <div                 className="scan-console-inner"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: '#0a0a0d',
+
               border: '1px solid rgba(250,204,21,0.15)',
               borderRadius: '8px',
               padding: '0.5rem 0.75rem',
@@ -261,7 +263,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
         </div>
 
         {/* Suggestion Badges */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'center', marginTop: '1rem' }}>
+        <div className="example-strip" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'center', marginTop: '1rem' }}>
           <span style={{ fontSize: '0.68rem', fontWeight: '700', letterSpacing: '1.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
             SEE A LIVE EXAMPLE – NO SIGN-IN NEEDED
           </span>
@@ -300,7 +302,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
       </div>
 
       {/* Scanned Repositories List */}
-      <div className="tech-section">
+      <div className="tech-section repository-section">
         <h3 className="tech-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           Scanned Repositories
           <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.05)', padding: '0.1rem 0.5rem', borderRadius: '50px' }}>
@@ -313,7 +315,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
             No indexed codebases yet. Enter a path above to scan your first codebase.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+          <div className="repository-list" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
             {repos.map(repo => {
               const isScanning = repo.status !== 'completed' && repo.status !== 'failed';
               const progressPct = repo.progress?.percent || (repo.status === 'completed' ? 100 : 0);

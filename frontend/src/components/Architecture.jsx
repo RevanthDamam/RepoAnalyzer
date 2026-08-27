@@ -304,7 +304,7 @@ export const Architecture = ({
 
   if (!files || files.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', background: '#111118' }}>
+      <div className="architecture-loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', background: '#111118' }}>
         <RefreshCw className="animate-spin" size={24} style={{ color: '#facc15' }} />
         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Loading workspace architecture...</p>
       </div>
@@ -312,7 +312,7 @@ export const Architecture = ({
   }
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+    <div className="architecture-page" style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
       
       {/* ── Left Map Canvas Container ── */}
       <div style={{ 
@@ -359,6 +359,7 @@ export const Architecture = ({
 
         {/* Infinite Canvas */}
         <div
+          className="architecture-canvas"
           ref={canvasRef}
           style={{
             flex: 1, position: 'relative', overflow: 'hidden',

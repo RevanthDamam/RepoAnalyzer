@@ -25,7 +25,7 @@ def get_groq_client():
         return None
 from .retrieval import build_context_from_results, retrieve_exact_files
 from .routing import route_user_query
-from ..embeddings.search import search_embeddings
+from ..embeddings.search import search_embeddings, search_exact
 
 def answer_single_agent(client, repo_name: str, tech_stack: dict, context: str, user_question: str) -> str:
     """Standard Single Agent prompt answering."""
@@ -176,7 +176,16 @@ def query_repository(db: Session, repo_id: int, query: str, mode: str = "single"
             "sources": []
         }
         
-    search_results = search_embeddings(db, repo_id, query, top_k=8)
+    vector_results = search_embeddings(db, repo_id, query, top_k=8)
+    exact_results = search_exact(db, repo_id, query, limit=4)
+    seen_results = set()
+    search_results = []
+    for result in exact_results + vector_results:
+        key = (result.get("entity_type"), result.get("entity_id"), result.get("path"))
+        if key not in seen_results:
+            seen_results.add(key)
+            search_results.append(result)
+    search_results = search_results[:10]
     vector_context = build_context_from_results(db, repo_id, search_results)
     file_context = retrieve_exact_files(db, repo_id, query, repo.path)
     

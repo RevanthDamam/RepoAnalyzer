@@ -1,6 +1,7 @@
 import numpy as np
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from ..database.models import Embedding
+from ..database.models import Embedding, File, Symbol
 from .generator import generate_embedding
 
 def search_embeddings(db: Session, repo_id: int, query: str, top_k: int = 8) -> list:
@@ -46,3 +47,45 @@ def search_embeddings(db: Session, repo_id: int, query: str, top_k: int = 8) -> 
         
     results.sort(key=lambda x: x["similarity"], reverse=True)
     return results[:top_k]
+
+
+def search_exact(db: Session, repo_id: int, query: str, limit: int = 4) -> list:
+    """Return bounded exact matches for file paths, filenames, and symbols."""
+    query_lower = query.lower().strip()
+    if not query_lower:
+        return []
+
+    pattern = f"%{query_lower}%"
+    results = []
+    file_records = db.query(File).filter(
+        File.repo_id == repo_id,
+        or_(File.path.ilike(pattern), File.filename.ilike(pattern)),
+    ).limit(limit).all()
+    for file_record in file_records:
+        results.append({
+            "id": f"file:{file_record.id}",
+            "entity_type": "file",
+            "entity_id": file_record.id,
+            "path": file_record.path,
+            "text_content": f"File: {file_record.path}",
+            "similarity": 1.0,
+        })
+
+    remaining = max(0, limit - len(results))
+    if remaining:
+        symbols = db.query(Symbol).filter(
+            Symbol.repo_id == repo_id,
+            or_(Symbol.name.ilike(pattern), Symbol.raw_code.ilike(pattern)),
+        ).limit(remaining).all()
+        for symbol in symbols:
+            path = symbol.file.path if symbol.file else "unknown"
+            results.append({
+                "id": f"symbol:{symbol.id}",
+                "entity_type": "symbol",
+                "entity_id": symbol.id,
+                "path": path,
+                "text_content": f"Symbol: {symbol.name} ({symbol.type}) in {path}",
+                "similarity": 1.0,
+            })
+
+    return results

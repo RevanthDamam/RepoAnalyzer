@@ -27,7 +27,7 @@ IGNORED_EXTS = {
     '.db', '.sqlite', '.sqlite3', '.pyc', '.pyd'
 }
 
-def crawl_repository(repo_path: str) -> dict:
+def crawl_repository(repo_path: str, cached_files=None, strict_hashing=None) -> dict:
     """
     Stage 1: Walks repository files, handles excludes, compiles folder tree mapping.
     """
@@ -36,6 +36,9 @@ def crawl_repository(repo_path: str) -> dict:
         
     files_list = []
     folder_tree = {}
+    cached_files = cached_files or {}
+    if strict_hashing is None:
+        strict_hashing = os.getenv("STRICT_HASHING", "false").lower() in {"1", "true", "yes"}
     
     repository_root = Path(repo_path).resolve(strict=True)
     for root, dirs, files in os.walk(repository_root, followlinks=False):
@@ -67,10 +70,19 @@ def crawl_repository(repo_path: str) -> dict:
 
             # File metadata. Large files are deliberately skipped to prevent
             # memory and CPU exhaustion during hashing and AST parsing.
-            file_size = resolved_path.stat().st_size
+            stat = resolved_path.stat()
+            file_size = stat.st_size
             if file_size > MAX_FILE_SIZE_BYTES:
                 continue
-            file_hash = compute_sha256(str(resolved_path))
+            cached = cached_files.get(rel_path)
+            metadata_unchanged = (
+                not strict_hashing
+                and cached is not None
+                and cached.size_bytes == file_size
+                and cached.mtime_ns == stat.st_mtime_ns
+                and cached.hash
+            )
+            file_hash = cached.hash if metadata_unchanged else compute_sha256(str(resolved_path))
             score = score_file(rel_path, file)
             
             files_list.append({
@@ -78,6 +90,7 @@ def crawl_repository(repo_path: str) -> dict:
                 "filename": file,
                 "extension": ext,
                 "size_bytes": file_size,
+                "mtime_ns": stat.st_mtime_ns,
                 "hash": file_hash,
                 "importance_score": score
             })

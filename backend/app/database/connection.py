@@ -44,9 +44,23 @@ def migrate_db():
         return
 
     repo_columns = {c["name"] for c in inspector.get_columns("repositories")}
+    file_columns = {c["name"] for c in inspector.get_columns("files")} if "files" in existing_tables else set()
+    embedding_columns = {c["name"] for c in inspector.get_columns("embeddings")} if "embeddings" in existing_tables else set()
 
     with engine.begin() as conn:
         if "session_id" not in repo_columns:
             conn.execute(text("ALTER TABLE repositories ADD COLUMN session_id VARCHAR"))
             print("[migrate_db] Added session_id column to repositories table.")
+        if "embedding_status" not in repo_columns:
+            conn.execute(text("ALTER TABLE repositories ADD COLUMN embedding_status VARCHAR DEFAULT 'pending'"))
+            print("[migrate_db] Added embedding_status column to repositories table.")
+        if "size_bytes" not in file_columns:
+            conn.execute(text("ALTER TABLE files ADD COLUMN size_bytes INTEGER DEFAULT 0"))
+            print("[migrate_db] Added size_bytes column to files table.")
+        if "mtime_ns" not in file_columns:
+            conn.execute(text("ALTER TABLE files ADD COLUMN mtime_ns INTEGER DEFAULT 0"))
+            print("[migrate_db] Added mtime_ns column to files table.")
+        if "content_hash" not in embedding_columns:
+            conn.execute(text("ALTER TABLE embeddings ADD COLUMN content_hash VARCHAR"))
+            print("[migrate_db] Added content_hash column to embeddings table.")
 

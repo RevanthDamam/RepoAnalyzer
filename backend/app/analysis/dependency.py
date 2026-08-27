@@ -72,13 +72,16 @@ def resolve_import_path(import_target: str, source_file_path: str, files_by_path
 
     return ""
 
-def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None) -> None:
+def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, changed_paths=None) -> None:
     """
     Builds the codebase import graph, inserts dependency relations, 
     and updates lines metrics (fan_in/fan_out) inside the Files table.
     Reads raw_content_compressed from DB; falls back to reading file from disk
     if repo_path is provided and the compressed content is missing.
     """
+    if changed_paths is not None and not changed_paths:
+        return
+
     # 1. Fetch all repository files and build relative lookup dict
     db_files = db.query(File).filter(File.repo_id == repo_id).all()
     files_by_path = {f.path: f for f in db_files}

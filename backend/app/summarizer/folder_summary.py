@@ -1,9 +1,10 @@
 import os
 from sqlalchemy.orm import Session
 from ..database.models import File, Folder, Repository
-from .compression import compress_code
 
-def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, progress_callback=None) -> None:
+STATIC_ANALYSIS_BATCH_SIZE = max(1, int(os.getenv("STATIC_ANALYSIS_BATCH_SIZE", "100")))
+
+def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, progress_callback=None, changed_paths=None) -> dict:
     """
     Crawls repository files, validates hashes, runs AST parsing & complexity calculations,
     and computes hierarchical folders without AI summarization or storing compressed code.
@@ -14,9 +15,12 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
     from ..database.models import Symbol
     
     db_files = db.query(File).filter(File.repo_id == repo.id).all()
-    total_files = len(db_files)
+    changed_paths = set(changed_paths) if changed_paths is not None else {file.path for file in db_files}
+    files_to_process = [file for file in db_files if file.path in changed_paths]
+    total_files = len(files_to_process)
+    symbols_changed = 0
     
-    for idx, file_record in enumerate(db_files):
+    for idx, file_record in enumerate(files_to_process):
         if progress_callback:
             progress_callback(f"Parsing static features & caching: {idx+1}/{total_files}", (idx / (total_files + 5)) * 100)
             
@@ -28,16 +32,15 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
             with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                 raw_content = f.read()
                 
-            # Compress code for metrics calculation only
-            compressed = compress_code(raw_content, file_record.extension)
-            
-            # Static complexity metrics
-            metrics = calculate_complexity(compressed, file_record.filename)
+            # Parse the original source once; this preserves line locations and avoids
+            # allocating a second full-file compressed string.
+            metrics = calculate_complexity(raw_content, file_record.filename)
             file_record.lines_of_code = metrics["loc"]
             file_record.complexity_score = metrics["complexity"]
-            
-            # Parse symbols (classes, functions) statically
-            symbols_list = parse_code_symbols(compressed, file_record.filename)
+
+            # Parse symbols (classes, functions) statically.
+            symbols_list = parse_code_symbols(raw_content, file_record.filename)
+            symbols_changed += len(symbols_list)
             
             # Replace old symbols and batch the write to reduce SQLite lock time.
             db.query(Symbol).filter(Symbol.file_id == file_record.id).delete(synchronize_session=False)
@@ -55,7 +58,7 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
                 )
                 db.add(db_sym)
 
-            if (idx + 1) % 25 == 0:
+            if (idx + 1) % STATIC_ANALYSIS_BATCH_SIZE == 0:
                 db.commit()
 
         except Exception as e:
@@ -89,4 +92,9 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
             db.add(folder_record)
 
     db.commit()
+    return {
+        "files_processed": total_files,
+        "files_skipped": len(db_files) - total_files,
+        "symbols_changed": symbols_changed,
+    }
 

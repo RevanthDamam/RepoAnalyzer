@@ -22,6 +22,7 @@ class Repository(Base):
     codebase_summary = Column(JSON, nullable=True)  # AI-generated structured codebase summary (cached)
     created_at = Column(DateTime, default=datetime.utcnow)
     scanned_at = Column(DateTime, nullable=True)
+    embedding_status = Column(String, default="pending")  # pending, running, completed, failed
 
     files = relationship("File", back_populates="repository", cascade="all, delete-orphan")
     folders = relationship("Folder", back_populates="repository", cascade="all, delete-orphan")
@@ -40,6 +41,8 @@ class File(Base):
     extension = Column(String)
     importance_score = Column(Integer)  # File ranking score (0-100)
     hash = Column(String)  # SHA256 of code content
+    size_bytes = Column(Integer, default=0)
+    mtime_ns = Column(Integer, default=0)
     
     # 2.0 Complexity & Metrics Columns
     lines_of_code = Column(Integer, default=0)
@@ -105,6 +108,7 @@ class Embedding(Base):
     path = Column(String)  # Entity path
     vector_data = Column(JSON)  # Vector coordinates
     text_content = Column(Text)
+    content_hash = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="embeddings")

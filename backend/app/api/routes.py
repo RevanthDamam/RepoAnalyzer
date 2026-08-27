@@ -265,6 +265,8 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         index_repository_embeddings(db, repo, progress_callback=update_progress)
 
         if repo_id in cancelled_repo_ids:
+            scan_progress.pop(repo_id, None)
+            cancelled_repo_ids.discard(repo_id)
             return
         repo.status = "completed"
         repo.scanned_at = datetime.utcnow()

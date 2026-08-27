@@ -110,16 +110,36 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
         })
         
     total_entities = len(entities_to_embed)
-    
+    vectors = []
+    if PROVIDER == "local" and total_entities:
+        try:
+            model = get_local_model()
+            for start in range(0, total_entities, 64):
+                end = min(start + 64, total_entities)
+                if progress_callback:
+                    progress_callback(
+                        f"Generating embeddings {end}/{total_entities}",
+                        (end / total_entities) * 100
+                    )
+                vectors.extend(model.encode(
+                    [ent["text"] for ent in entities_to_embed[start:end]],
+                    batch_size=32,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                ).tolist())
+        except Exception as exc:
+            print(f"Batch embedding failed: {exc}. Falling back to individual embeddings.")
+            vectors = []
+
     for idx, ent in enumerate(entities_to_embed):
-        if progress_callback:
+        if progress_callback and not vectors:
             progress_callback(
                 f"Generating embeddings {idx+1}/{total_entities}: {ent['path']}",
                 (idx / total_entities) * 100
             )
-            
-        vector = generate_embedding(ent["text"])
-        
+
+        vector = vectors[idx] if vectors else generate_embedding(ent["text"])
+
         db_emb = Embedding(
             repo_id=repo.id,
             entity_type=ent["entity_type"],

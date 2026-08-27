@@ -69,10 +69,19 @@ def resolve_import_path(import_target: str, source_file_path: str, files_by_path
     return ""
 
 
-def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, changed_paths=None) -> dict:
+def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, changed_paths=None, content_cache=None) -> dict:
     """Build the import graph and fan-in/fan-out metrics in bounded DB batches."""
     if changed_paths is not None and not changed_paths:
-        return {"dependencies_total": 0, "dependency_files_analyzed": 0}
+        return {
+            "dependencies_total": 0,
+            "dependency_files_analyzed": 0,
+            "imports_extracted": 0,
+            "imports_resolved": 0,
+            "imports_unresolved": 0,
+            "dependency_files_read": 0,
+            "database_commits": 0,
+            "database_bulk_operations": 0,
+        }
 
     db_files = db.query(File).filter(File.repo_id == repo_id).all()
     files_by_path = {file_record.path: file_record for file_record in db_files}
@@ -90,26 +99,41 @@ def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, chang
     fan_out_counts = {file_record.id: 0 for file_record in db_files}
     fan_in_counts = {file_record.id: 0 for file_record in db_files}
     dependencies_to_add = []
+    content_cache = content_cache or {}
+    changed_paths = set(changed_paths or ())
+    imports_extracted = 0
+    imports_resolved = 0
+    imports_unresolved = 0
+    files_read = 0
 
     for file_record in db_files:
-        content = None
-        if repo_path:
-            full_path = os.path.join(repo_path, file_record.path)
-            if os.path.exists(full_path):
-                try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
-                        content = handle.read()
-                except Exception:
-                    continue
+        raw_imports = None
+        if file_record.path not in changed_paths and file_record.imports_cache is not None:
+            raw_imports = file_record.imports_cache
+        else:
+            content = content_cache.get(file_record.path)
+            if content is None and repo_path:
+                full_path = os.path.join(repo_path, file_record.path)
+                if os.path.exists(full_path):
+                    try:
+                        with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
+                            content = handle.read()
+                        files_read += 1
+                    except Exception:
+                        continue
+            if content is None:
+                continue
+            raw_imports = extract_raw_imports(content, file_record.extension)
+            file_record.imports_cache = raw_imports
 
-        if not content:
-            continue
-
+        imports_extracted += len(raw_imports)
         resolved_targets = set()
-        for import_target in extract_raw_imports(content, file_record.extension):
+        for import_target in raw_imports:
             resolved_path = resolve_import_path(import_target, file_record.path, files_by_path, suffix_index)
             if resolved_path and resolved_path != file_record.path:
                 resolved_targets.add(resolved_path)
+            else:
+                imports_unresolved += 1
 
         for target in resolved_targets:
             dependencies_to_add.append(Dependency(
@@ -120,6 +144,7 @@ def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, chang
             ))
             fan_out_counts[file_record.id] += 1
             fan_in_counts[files_by_path[target].id] += 1
+            imports_resolved += 1
 
     for start in range(0, len(dependencies_to_add), DEPENDENCY_BATCH_SIZE):
         db.add_all(dependencies_to_add[start:start + DEPENDENCY_BATCH_SIZE])
@@ -132,4 +157,10 @@ def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, chang
     return {
         "dependencies_total": len(dependencies_to_add),
         "dependency_files_analyzed": len(db_files),
+        "imports_extracted": imports_extracted,
+        "imports_resolved": imports_resolved,
+        "imports_unresolved": imports_unresolved,
+        "dependency_files_read": files_read,
+        "database_commits": 3,
+        "database_bulk_operations": 2 if dependencies_to_add else 1,
     }

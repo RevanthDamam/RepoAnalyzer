@@ -262,6 +262,13 @@ def run(mode: str, backend_root: Path, fixture_root: Path, large_lines: int, cre
         if mode == "current":
             runner = run_current
             result = runner(db, repo, fixture_root, crawl_repository, run_static_analysis_pipeline, analyze_dependencies, index_repository_embeddings)
+        elif mode == "current-incremental":
+            first = run_current(db, repo, fixture_root, crawl_repository, run_static_analysis_pipeline, analyze_dependencies, index_repository_embeddings)
+            unchanged = run_current(db, repo, fixture_root, crawl_repository, run_static_analysis_pipeline, analyze_dependencies, index_repository_embeddings)
+            changed_file = fixture_root / "module_000.py"
+            changed_file.write_text("def function_000():\n    return 999999\n")
+            changed = run_current(db, repo, fixture_root, crawl_repository, run_static_analysis_pipeline, analyze_dependencies, index_repository_embeddings)
+            result = {"passes": {"first": first, "unchanged": unchanged, "one_file_changed": changed}}
         elif mode == "legacy-valid":
             from app.analysis.ast_parser import parse_code_symbols
             from app.analysis.complexity import calculate_complexity
@@ -297,7 +304,7 @@ def run(mode: str, backend_root: Path, fixture_root: Path, large_lines: int, cre
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("current", "legacy-valid", "old"), default="current")
+    parser.add_argument("--mode", choices=("current", "current-incremental", "legacy-valid", "old"), default="current")
     parser.add_argument("--old-backend", type=Path)
     parser.add_argument("--fixture-root", type=Path)
     parser.add_argument("--create-fixture", action="store_true")

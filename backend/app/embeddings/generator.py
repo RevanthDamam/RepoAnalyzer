@@ -4,7 +4,8 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session
 
-from ..database.models import Embedding, File, Repository, Symbol
+from ..database.models import Embedding, File, Folder, Repository, Symbol
+from ..security import MAX_FILE_SIZE_BYTES, safe_repo_file
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
@@ -12,6 +13,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
 EMBEDDING_BATCH_SIZE = max(1, int(os.getenv("EMBEDDING_BATCH_SIZE", "64")))
 EMBEDDING_MODEL_BATCH_SIZE = max(1, int(os.getenv("EMBEDDING_MODEL_BATCH_SIZE", "32")))
+MAX_README_EMBED_BYTES = min(MAX_FILE_SIZE_BYTES, max(0, int(os.getenv("MAX_README_EMBED_BYTES", "32768"))))
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -92,19 +94,48 @@ def _embedding_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
 
 
-def _semantic_entities(db: Session, repo: Repository) -> list[dict]:
-    """Build the same README and symbol corpus used by the previous indexer."""
+def _semantic_entities(db: Session, repo: Repository, repo_path: str | None = None) -> list[dict]:
+    """Build bounded README, folder, file, and symbol semantic entities."""
     entities = []
     readme_file = db.query(File).filter(
         File.repo_id == repo.id,
         File.filename.ilike("README.md"),
     ).first()
     if readme_file:
+        readme_text = f"README path: {readme_file.path}\n"
+        if repo_path and MAX_README_EMBED_BYTES:
+            try:
+                readme_path = safe_repo_file(repo_path, readme_file.path)
+                with readme_path.open("r", encoding="utf-8", errors="ignore") as handle:
+                    readme_text += handle.read(MAX_README_EMBED_BYTES)
+            except Exception:
+                pass
         entities.append({
             "entity_type": "readme",
             "entity_id": readme_file.id,
             "path": readme_file.path,
-            "text": f"README: {readme_file.path}",
+            "text": readme_text,
+        })
+
+    for folder in db.query(Folder).filter(Folder.repo_id == repo.id).all():
+        entities.append({
+            "entity_type": "folder",
+            "entity_id": folder.id,
+            "path": folder.path,
+            "text": f"Folder: {folder.path}\nParent folder: {folder.parent_path or 'repository root'}",
+        })
+
+    for file_record in db.query(File).filter(File.repo_id == repo.id).all():
+        entities.append({
+            "entity_type": "file",
+            "entity_id": file_record.id,
+            "path": file_record.path,
+            "text": (
+                f"File: {file_record.path}\n"
+                f"Extension: {file_record.extension or 'none'}\n"
+                f"Lines: {file_record.lines_of_code or 0}\n"
+                f"Complexity: {file_record.complexity_score or 0}"
+            ),
         })
 
     for symbol in db.query(Symbol).filter(Symbol.repo_id == repo.id).all():
@@ -135,7 +166,7 @@ def _persist_embeddings(db: Session, repo: Repository, entities: list[dict], vec
     db.commit()
 
 
-def index_repository_embeddings(db: Session, repo: Repository, progress_callback=None) -> dict:
+def index_repository_embeddings(db: Session, repo: Repository, progress_callback=None, repo_path: str | None = None) -> dict:
     """Reuse unchanged semantic units and generate only new or changed embeddings.
 
     Existing rows are retained until replacement rows have been persisted. Legacy rows
@@ -144,6 +175,7 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
     if progress_callback:
         progress_callback("Preparing semantic index...", 0.0)
 
+    database_commits = 0
     existing = db.query(Embedding).filter(Embedding.repo_id == repo.id).all()
     cached_by_key = defaultdict(list)
     for item in existing:
@@ -152,8 +184,9 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
         if item.content_hash:
             cached_by_key[(item.entity_type, item.path, item.content_hash)].append(item)
     db.commit()
+    database_commits += 1
 
-    entities = _semantic_entities(db, repo)
+    entities = _semantic_entities(db, repo, repo_path=repo_path)
     pending = []
     used_ids = set()
     reused = 0
@@ -177,8 +210,9 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
         progress_callback(f"Reused {reused} embeddings; {total} need generation", 0.0)
 
     def store_batch(batch_entities: list[dict], vectors: list[list[float]]) -> None:
-        nonlocal created
+        nonlocal created, database_commits
         _persist_embeddings(db, repo, batch_entities, vectors)
+        database_commits += 1
         created += len(batch_entities)
 
     if PROVIDER == "local" and pending:
@@ -223,4 +257,12 @@ def index_repository_embeddings(db: Session, repo: Repository, progress_callback
             continue
         db.delete(item)
     db.commit()
-    return {"embeddings_created": created, "embeddings_reused": reused}
+    database_commits += 1
+    return {
+        "embeddings_created": created,
+        "embeddings_reused": reused,
+        "embeddings_deleted": len(stale),
+        "embedding_batches": (created + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE if created else 0,
+        "database_commits": database_commits,
+        "database_bulk_operations": database_commits,
+    }

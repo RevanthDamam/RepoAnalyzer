@@ -10,7 +10,26 @@ RepoAnalyzer now uses a true metadata-first incremental indexing path. Each disc
 
 Static analysis now parses the original source rather than a destructive compressed copy. This preserves Python AST line numbers and raw source segments, avoids a second full-file allocation, and retains the existing complexity and symbol behavior. Database commits for static symbols and embeddings are batched. Embeddings are content-hash aware, generated in bounded batches, and committed incrementally so a later run can reuse completed units after a partial failure or cancellation.
 
-The repository becomes `completed` and statically browsable before the embedding phase begins. A persistent `embedding_status` field reports `pending`, `running`, `completed`, or `failed`; exact path, filename, and symbol retrieval remains available even when vector coverage is incomplete. Existing hybrid RAG behavior is preserved and now merges bounded exact matches with vector candidates.
+The repository remains in an indexing status until embeddings finish, matching the preserved frontend’s polling and readiness behavior. A persistent `embedding_status` field reports `pending`, `running`, `completed`, or `failed`; progress metrics expose the completed static stage while embeddings run. Existing hybrid RAG behavior is preserved and now merges bounded exact matches with vector candidates.
+
+## Second-pass audit summary
+
+| Area | Already fixed | Remaining issue or deliberate trade-off | Assessment |
+|---|---|---|---|
+| Crawler and hashing | Metadata-first reuse, strict hashing, ignore/symlink/size/file-count limits, and heartbeat progress | Full SHA-256 remains available for correctness-first deployments | Complete |
+| Static database work | Changed-file filtering and batched transactions | Parsing remains CPU-bound for genuinely changed large files | Correct and bounded |
+| Folder persistence | One prefetch, bulk insert, and stale-folder deletion | No folder deletion occurs when a file remains beneath that folder | Complete |
+| Dependency analysis | Indexed resolution, persistent import cache, bounded inserts, and no-change skip | Graph edges are still rebuilt on changed scans for fan-in/fan-out correctness | Targeted incremental improvement |
+| Source reuse | Changed source is cached within configured byte limits for static, dependency, and feature stages | Oversized files intentionally fall back to bounded rereads | Complete within memory limits |
+| Feature detection | Per-file feature flags are cached and changed files reuse static content | Important-file policy remains as before | Complete |
+| Embedding corpus | Meaningful bounded README, file, folder, and symbol entities with hash reuse | File/folder entities contain metadata rather than full source | Correct and bounded |
+| Scan status and progress | Backend remains indexing until embeddings complete; percentages are monotonic and file/batch counters are exposed | The preserved frontend still waits for final completion, as required | Compatible |
+| Database and migrations | Composite repository-scoped indexes and safe conditional startup migration | No destructive migration or unique constraint is added to legacy duplicate rows | Compatible |
+| Concurrency | No uncontrolled workers or new infrastructure | CPU-heavy scans still share the FastAPI service process | Deliberate trade-off |
+| Security and frontend | Existing guardrails and current UI/API contract retained | No frontend redesign was introduced | Preserved |
+| Benchmarking | Current incremental, valid-legacy, old-commit, and dependency-cache modes exist | Production-provider and PostgreSQL timings remain deployment-specific | Measured honestly |
+
+The top five remaining bottlenecks are CPU parsing for genuinely changed large files, full dependency graph reconstruction after a change despite cached imports, local SentenceTransformer cold start and CPU inference, Python/NumPy vector search over a very large embedding table, and FastAPI BackgroundTasks sharing the web process with CPU-heavy work. These were not addressed with unsafe quality reductions or additional queue infrastructure.
 
 ## Updated pipeline
 
@@ -21,8 +40,8 @@ The repository becomes `completed` and statically browsable before the embedding
 | Static analysis | Read, compressed, and parsed every file | Reads and parses only changed files using original source; unchanged symbols and metrics remain intact |
 | Dependencies | Rebuilt on every scan and import resolution can scan every repository path | Skips when there are no changed paths; changed scans use a precomputed suffix index and bounded inserts, while rebuilding the full graph to preserve fan-in/fan-out correctness |
 | Features and technology | Recomputed on every scan | Recomputed only when files changed or the repository has no cached result |
-| Embeddings | Cleared and regenerated | Reuses content-hash matches, generates only missing units, commits batches, and removes stale rows after replacement succeeds |
-| User availability | Static and embedding work completed as one blocking phase | Repository is browsable after static analysis; embedding progress is separately observable and resumable |
+| Embeddings | Cleared and regenerated | Reuses content-hash matches, generates only missing units for README/file/folder/symbol entities, commits batches, and removes stale rows after replacement succeeds |
+| User availability | Static and embedding work completed as one blocking phase | Static-stage metrics are exposed while embeddings run; the preserved frontend waits for final completion before opening the repository |
 | Folder persistence | Query and commit for each folder | Prefetch existing folder paths and insert missing folders in one batch |
 | Retrieval | Vector search plus exact source snippets | Vector candidates are merged with bounded exact file/path/symbol candidates and deduplicated |
 
@@ -38,7 +57,7 @@ The orchestration and progress metrics are implemented in [`routes.py`][1], disc
 
 The static pipeline no longer creates a compressed source copy before complexity and AST processing. Complexity is calculated from the original text, and Python symbol extraction uses `ast.parse` and `ast.get_source_segment` against that same original text. Consequently, blank lines and comments continue to occupy their original positions, so symbol line locations remain meaningful. JavaScript and TypeScript line-based extraction also sees the original source line numbering.
 
-Only changed files are opened, parsed, and have their symbols replaced. Folder reconciliation remains inexpensive metadata work, and unchanged symbols and file metrics are retained. Static commits use `STATIC_ANALYSIS_BATCH_SIZE` rather than committing once per file.
+Only changed files are opened, parsed, and have their symbols replaced. Old symbols for each changed batch are deleted with one bulk `synchronize_session=False` operation, then replacement rows are inserted before the batch commit. Folder reconciliation prefetches existing paths, bulk-inserts missing folders, and removes stale folders that are no longer required. Static commits use `STATIC_ANALYSIS_BATCH_SIZE` rather than committing once per file.
 
 ### Old baseline comparison
 
@@ -48,11 +67,11 @@ To obtain an apples-to-apples control, the benchmark also includes `legacy-valid
 
 ### Embedding cache, batching, and resumability
 
-The embedding cache is keyed by entity type, path, and a deterministic SHA-256 hash of the embedding text. Existing legacy rows without `content_hash` are backfilled from their stored text when possible. Rows are not deleted until replacement rows have been committed. Local model generation uses `EMBEDDING_BATCH_SIZE` outer batches and `EMBEDDING_MODEL_BATCH_SIZE` model batches; each successfully generated batch is persisted immediately. If a later batch fails, already committed vectors remain available and the next indexing attempt can reuse them.
+The embedding cache is keyed by entity type, path, and a deterministic SHA-256 hash of the embedding text. Existing legacy rows without `content_hash` are backfilled from their stored text when possible. Rows are not deleted until replacement rows have been committed. The semantic corpus now contains bounded meaningful README content, folder metadata, file metadata, and symbol definitions. Local model generation uses `EMBEDDING_BATCH_SIZE` outer batches and `EMBEDDING_MODEL_BATCH_SIZE` model batches; each successfully generated batch is persisted immediately. If a later batch fails, already committed vectors remain available and the next indexing attempt can reuse them.
 
-The current corpus intentionally remains compatible with the prior implementation: README and symbol entities are indexed with the same text format. No new external queue, Redis instance, Celery worker, or other infrastructure was introduced.
+The current corpus remains bounded and compatible with existing retrieval: file and folder entities contain metadata rather than full source, while README content is capped by `MAX_README_EMBED_BYTES`. No new external queue, Redis instance, Celery worker, or other infrastructure was introduced.
 
-The dependency resolver now builds a suffix index once per full-graph rebuild. Exact paths remain the first lookup, while module/file suffix variants use indexed candidates instead of iterating through every repository path for every import. Dependency rows are inserted in `DEPENDENCY_BATCH_SIZE` chunks, preserving the existing full-rebuild semantics on changed scans.
+The dependency resolver now builds a suffix index once per full-graph rebuild. Exact paths remain the first lookup, while module/file suffix variants use indexed candidates instead of iterating through every repository path for every import. Changed files reuse bounded source content from static analysis, and unchanged files reuse their persisted `imports_cache`; the graph is still rebuilt from cached import lists when a change occurs, preserving fan-in/fan-out correctness without rereading unchanged source. Dependency rows are inserted in `DEPENDENCY_BATCH_SIZE` chunks and metrics report extracted, resolved, unresolved, and read counts.
 
 ### RAG and fallback behavior
 
@@ -60,7 +79,7 @@ Exact retrieval is bounded at the database query level across file paths, filena
 
 ### Observability and API compatibility
 
-Existing `message` and `percent` progress fields remain unchanged. Progress payloads now additionally expose metrics such as `files_total`, `files_changed`, `files_skipped`, `files_processed`, `symbols_changed`, `symbols_total`, `embeddings_created`, `embeddings_reused`, stage timings, and total duration. Repository list/detail responses add the additive `embedding_status` field. Static completion is persisted before embeddings begin, while the final progress record includes the complete timing and work counters.
+Existing `message` and `percent` progress fields remain unchanged. Progress payloads now additionally expose metrics such as `files_total`, `files_changed`, `files_skipped`, `files_deleted`, `files_processed`, `symbols_created`, `symbols_total`, `dependencies_total`, `dependency_files_analyzed`, `imports_extracted`, `imports_resolved`, `imports_unresolved`, `embeddings_created`, `embeddings_reused`, `embeddings_deleted`, `embedding_batches`, database commits/bulk operations, stage timings, and total duration. Repository list/detail responses add the additive `embedding_status` field. The backend remains in `indexing embeddings` until vector generation completes, so the preserved frontend does not show a repository as ready early.
 
 The crawler now emits heartbeat messages while walking and hashing large repositories, including a final `Crawling complete` message at 15 percent. This prevents the initial 10-percent label from appearing frozen and lets cancellation be observed during discovery. The heartbeat interval is configurable with `CRAWL_PROGRESS_INTERVAL_SECONDS` and defaults to 0.5 seconds. A local reproduction against the reported public `PDF_Reader_RAG` repository discovered 24 analyzable files in 0.0036 seconds, indicating that a deployment showing a prolonged 10-percent state should be restarted onto the latest commit and checked for runtime logs or a stale worker.
 
@@ -78,7 +97,7 @@ The first pass parsed 3,080 symbols. The unchanged pass parsed zero files and en
 
 ## Database migration and deployment settings
 
-Startup migration remains lightweight and backward-compatible. Existing databases receive `repositories.embedding_status`, `files.size_bytes`, `files.mtime_ns`, and `embeddings.content_hash` when missing. New installations receive these columns through the SQLAlchemy models. No destructive migration or data reset is required.
+Startup migration remains lightweight and backward-compatible. Existing databases receive `repositories.embedding_status`, `files.size_bytes`, `files.mtime_ns`, `files.imports_cache`, `files.feature_flags`, and `embeddings.content_hash` when missing. New installations receive these columns and targeted repository-scoped composite indexes through the SQLAlchemy models; existing installations receive the indexes when required columns are present. No destructive migration or data reset is required.
 
 | Variable | Default | Purpose |
 |---|---:|---|
@@ -86,22 +105,27 @@ Startup migration remains lightweight and backward-compatible. Existing database
 | `CRAWL_PROGRESS_INTERVAL_SECONDS` | `0.5` | Minimum interval between crawler heartbeat progress updates |
 | `STATIC_ANALYSIS_BATCH_SIZE` | `100` | Number of changed files between static-analysis commits |
 | `DEPENDENCY_BATCH_SIZE` | `1000` | Number of dependency rows inserted per batch |
+| `SOURCE_CACHE_MAX_BYTES` | `2097152` | Maximum UTF-8 bytes retained in the per-scan source cache |
+| `SOURCE_CACHE_MAX_FILE_BYTES` | `256000` | Maximum size of one source file retained in the per-scan cache |
+| `MAX_README_EMBED_BYTES` | `32768` | Maximum README bytes included in its semantic embedding |
 | `EMBEDDING_BATCH_SIZE` | `64` | Number of texts per embedding-generation/persistence batch |
 | `EMBEDDING_MODEL_BATCH_SIZE` | `32` | Number of texts passed to the local model per encode call |
 
-These settings are documented in [`backend/.env.example`][7]. A deployment should restart the backend after changing them. Existing repositories do not require a manual reset; the next scan backfills metadata and embedding hashes as needed.
+These settings are documented in [`backend/.env.example`][7]. A deployment should restart the backend after changing them. Existing repositories do not require a manual reset; startup migration adds the cache columns/indexes and the next scan backfills metadata, import/feature caches, and embedding hashes as needed.
 
 ## Validation completed
 
-The final validation included backend bytecode compilation, `git diff --check`, a temporary end-to-end incremental regression, a temporary legacy-schema migration regression, the deterministic benchmark, frontend lint, frontend production build, and a source scan confirming that `dangerouslySetInnerHTML` is not present in `frontend/src`. The incremental regression verified strict hashing, cheap hash reuse, original Python line locations, zero static work on an unchanged scan, one-file reprocessing, embedding reuse, and changed-symbol regeneration. Frontend lint completed with **0 errors and 3 pre-existing hook-dependency warnings**; the production build completed successfully.
+The second-pass validation included backend bytecode compilation, crawler and dependency-index regressions, temporary end-to-end incremental and deletion regressions, legacy-schema migration validation, dependency-cache benchmarking, frontend lint, frontend production build, and the existing security/source checks. The tests verify strict hashing, cheap hash reuse, original Python line locations, zero static work on an unchanged scan, one-file reprocessing, import-cache reuse, feature-flag reuse, meaningful README embeddings, file/folder/symbol corpus coverage, stale embedding cleanup, and stale-folder cleanup. Frontend lint completed with **0 errors and 3 pre-existing hook-dependency warnings**; the production build completed successfully.
 
 ## Remaining bottlenecks and deliberate trade-offs
 
-Dependency analysis still rebuilds the full graph when any file changes. This is deliberate: selective edge updates can incorrectly leave fan-in/fan-out metrics stale for files affected indirectly by an import change. The unchanged path skips dependency work entirely, which is the important large-repository rescan case.
+Dependency analysis still rebuilds the full graph when any file changes. This is deliberate: selective edge updates can incorrectly leave fan-in/fan-out metrics stale for files affected indirectly by an import change. The graph rebuild now uses cached imports for unchanged files; the 1,000-file benchmark read 1,000 files cold and **0 unchanged files** during a one-file incremental graph rebuild, with 1,000 resolved dependencies in both cases.
 
 Vector search still loads repository embedding rows into NumPy for cosine ranking. The exact path/name fallback is database-bounded, but a very large vector corpus may eventually justify a dedicated vector index. That additional infrastructure was not introduced because the current request prioritizes simple maintainable changes and the benchmark’s dominant improvement is eliminating redundant file parsing and embedding generation.
 
 The in-memory cancellation set remains process-local, as before. Batch commits make embedding retries useful, but cancellation is observed at progress checkpoints rather than interrupting an individual model encode call. Multi-process cancellation or durable job scheduling would require infrastructure that was outside the requested scope.
+
+The second-pass incremental benchmark on 81 files plus a 12,000-line source fixture measured **5.9183 seconds** for the first pass, **1.0236 seconds** for an unchanged pass with zero static files processed and 3,161 embeddings reused, and **1.0627 seconds** after changing one file with one static file processed, one embedding created, 3,160 reused, and one stale embedding removed. The dependency-cache benchmark on 1,000 Python files extracted and resolved 1,000 imports in both passes; source reads fell from **1,000 cold reads to 0 unchanged-file reads**, with measured times of 0.3717 seconds and 0.3344 seconds. These measurements use a fake embedding model and are intended to show work reduction, not production capacity.
 
 ## References
 
@@ -115,3 +139,4 @@ The in-memory cancellation set remains process-local, as before. Batch commits m
 [8]: backend/app/scanner/crawler.py "Crawler heartbeat progress and cancellation checkpoints"
 [9]: backend/app/analysis/dependency.py "Indexed dependency resolution and bounded dependency persistence"
 [10]: backend/bench_incremental_indexing.py "Current, valid-legacy-control, and old-commit benchmark modes"
+[11]: backend/bench_dependency_cache.py "Dependency import-cache benchmark"

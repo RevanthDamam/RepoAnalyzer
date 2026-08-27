@@ -60,7 +60,31 @@ def migrate_db():
         if "mtime_ns" not in file_columns:
             conn.execute(text("ALTER TABLE files ADD COLUMN mtime_ns INTEGER DEFAULT 0"))
             print("[migrate_db] Added mtime_ns column to files table.")
+        if "imports_cache" not in file_columns:
+            conn.execute(text("ALTER TABLE files ADD COLUMN imports_cache JSON"))
+            print("[migrate_db] Added imports_cache column to files table.")
+        if "feature_flags" not in file_columns:
+            conn.execute(text("ALTER TABLE files ADD COLUMN feature_flags JSON"))
+            print("[migrate_db] Added feature_flags column to files table.")
         if "content_hash" not in embedding_columns:
             conn.execute(text("ALTER TABLE embeddings ADD COLUMN content_hash VARCHAR"))
             print("[migrate_db] Added content_hash column to embeddings table.")
+        index_definitions = (
+            ("repositories", {"session_id", "path"}, "CREATE INDEX IF NOT EXISTS ix_repositories_session_path ON repositories (session_id, path)"),
+            ("files", {"repo_id", "path"}, "CREATE INDEX IF NOT EXISTS ix_files_repo_path ON files (repo_id, path)"),
+            ("folders", {"repo_id", "path"}, "CREATE INDEX IF NOT EXISTS ix_folders_repo_path ON folders (repo_id, path)"),
+            ("symbols", {"repo_id", "file_id"}, "CREATE INDEX IF NOT EXISTS ix_symbols_repo_file ON symbols (repo_id, file_id)"),
+            ("dependencies", {"repo_id", "from_file_path"}, "CREATE INDEX IF NOT EXISTS ix_dependencies_repo_from ON dependencies (repo_id, from_file_path)"),
+            ("dependencies", {"repo_id", "to_file_path"}, "CREATE INDEX IF NOT EXISTS ix_dependencies_repo_to ON dependencies (repo_id, to_file_path)"),
+            ("embeddings", {"repo_id", "content_hash"}, "CREATE INDEX IF NOT EXISTS ix_embeddings_repo_hash ON embeddings (repo_id, content_hash)"),
+        )
+        current_inspector = inspect(engine)
+        table_columns = {
+            table: {column["name"] for column in current_inspector.get_columns(table)}
+            for table, _, _ in index_definitions
+            if table in existing_tables
+        }
+        for table, required_columns, statement in index_definitions:
+            if required_columns.issubset(table_columns.get(table, set())):
+                conn.execute(text(statement))
 

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -30,6 +30,8 @@ class Repository(Base):
     dependencies = relationship("Dependency", back_populates="repository", cascade="all, delete-orphan")
     embeddings = relationship("Embedding", back_populates="repository", cascade="all, delete-orphan")
 
+    __table_args__ = (Index("ix_repositories_session_path", "session_id", "path"),)
+
 
 class File(Base):
     __tablename__ = "files"
@@ -43,6 +45,8 @@ class File(Base):
     hash = Column(String)  # SHA256 of code content
     size_bytes = Column(Integer, default=0)
     mtime_ns = Column(Integer, default=0)
+    imports_cache = Column(JSON, nullable=True)
+    feature_flags = Column(JSON, nullable=True)
     
     # 2.0 Complexity & Metrics Columns
     lines_of_code = Column(Integer, default=0)
@@ -56,6 +60,9 @@ class File(Base):
     repository = relationship("Repository", back_populates="files")
     symbols = relationship("Symbol", back_populates="file", cascade="all, delete-orphan")
 
+    __table_args__ = (Index("ix_files_repo_path", "repo_id", "path"),)
+
+
 class Folder(Base):
     __tablename__ = "folders"
 
@@ -68,6 +75,9 @@ class Folder(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="folders")
+
+    __table_args__ = (Index("ix_folders_repo_path", "repo_id", "path"),)
+
 
 class Symbol(Base):
     __tablename__ = "symbols"
@@ -86,6 +96,9 @@ class Symbol(Base):
     repository = relationship("Repository", back_populates="symbols")
     file = relationship("File", back_populates="symbols")
 
+    __table_args__ = (Index("ix_symbols_repo_file", "repo_id", "file_id"),)
+
+
 class Dependency(Base):
     __tablename__ = "dependencies"
 
@@ -97,6 +110,12 @@ class Dependency(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="dependencies")
+
+    __table_args__ = (
+        Index("ix_dependencies_repo_from", "repo_id", "from_file_path"),
+        Index("ix_dependencies_repo_to", "repo_id", "to_file_path"),
+    )
+
 
 class Embedding(Base):
     __tablename__ = "embeddings"
@@ -112,3 +131,5 @@ class Embedding(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="embeddings")
+
+    __table_args__ = (Index("ix_embeddings_repo_hash", "repo_id", "content_hash"),)

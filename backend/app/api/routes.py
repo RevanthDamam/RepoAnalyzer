@@ -158,7 +158,8 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
     try:
         progress_commits = [0]
         scan_started = time.perf_counter()
-        scan_metrics = {"files_total": 0, "files_changed": 0, "files_skipped": 0}
+        scan_metrics = {"files_total": 0, "files_changed": 0, "files_skipped": 0, "files_deleted": 0}
+        source_cache = {}
         repo.embedding_status = "pending"
 
         def update_progress(message: str, pct: float):
@@ -178,6 +179,7 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
             print(f"[RepoScan {repo_id}] {message} - {pct:.1f}%")
 
         # 2.0 Git Cloning Check
+        clone_started = time.perf_counter()
         is_git_url = repo_path.startswith(("http://", "https://", "git@"))
         if is_git_url:
             repo_path = validate_git_source(repo_path)
@@ -210,6 +212,7 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
 
         else:
             repo_path = str(resolve_local_repository(repo_path))
+        scan_metrics["clone_seconds"] = round(time.perf_counter() - clone_started, 4)
 
         # 1 & 2. Scan & Classify
         update_progress("Crawling files and ranking importance", 10.0)
@@ -262,16 +265,16 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
                 db.add(db_file)
                 changed_paths.add(rel_path)
                 
-        for path, db_file in existing_files.items():
-            if path not in scanned_paths:
-                changed_paths.add(path)
-                db.delete(db_file)
+        deleted_paths = set(existing_files) - scanned_paths
+        for path in deleted_paths:
+            db.delete(existing_files[path])
         db.commit()
         scan_metrics["file_persistence_seconds"] = round(time.perf_counter() - stage_started, 4)
         scan_metrics.update({
             "files_total": len(scan_results["files"]),
             "files_changed": len(changed_paths),
             "files_skipped": len(skipped_paths),
+            "files_deleted": len(deleted_paths),
         })
         scan_progress[repo_id] = {
             "message": f"Files discovered: {len(scan_results['files'])}; changed: {len(changed_paths)}; skipped: {len(skipped_paths)}",
@@ -296,23 +299,56 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
             repo_path,
             progress_callback=update_progress,
             changed_paths=changed_paths,
+            content_cache=source_cache,
         )
         scan_metrics["static_analysis_seconds"] = round(time.perf_counter() - stage_started, 4)
-        scan_metrics.update(static_metrics or {})
+        if static_metrics:
+            scan_metrics["database_commits"] = scan_metrics.get("database_commits", 0) + static_metrics.pop("database_commits", 0)
+            scan_metrics["database_bulk_operations"] = scan_metrics.get("database_bulk_operations", 0) + static_metrics.pop("database_bulk_operations", 0)
+            scan_metrics.update(static_metrics)
+        scan_metrics["symbols_created"] = scan_metrics.get("symbols_changed", 0)
         scan_metrics["symbols_total"] = db.query(Symbol).filter(Symbol.repo_id == repo.id).count()
 
         # 5. Build Dependency Graph (fan-in/fan-out metrics)
         update_progress("Building import dependency graph", 65.0)
         stage_started = time.perf_counter()
-        dependency_metrics = analyze_dependencies(db, repo.id, repo_path, changed_paths=changed_paths)
+        dependency_metrics = analyze_dependencies(
+            db,
+            repo.id,
+            repo_path,
+            changed_paths=changed_paths,
+            content_cache=source_cache,
+        )
         scan_metrics["dependency_seconds"] = round(time.perf_counter() - stage_started, 4)
-        scan_metrics.update(dependency_metrics or {})
+        if dependency_metrics:
+            scan_metrics["database_commits"] = scan_metrics.get("database_commits", 0) + dependency_metrics.pop("database_commits", 0)
+            scan_metrics["database_bulk_operations"] = scan_metrics.get("database_bulk_operations", 0) + dependency_metrics.pop("database_bulk_operations", 0)
+            scan_metrics.update(dependency_metrics)
         
         # 6. Feature Detection (payments, auth, redis, docker checks)
         update_progress("Detecting repository codebase features", 75.0)
         stage_started = time.perf_counter()
         if changed_paths or repo.features is None:
-            repo.features = detect_repo_features(repo_path, scan_results["files"])
+            cached_feature_flags = {
+                path: file_record.feature_flags
+                for path, file_record in existing_files.items()
+                if path not in changed_paths and file_record.feature_flags
+            }
+            feature_result = detect_repo_features(
+                repo_path,
+                scan_results["files"],
+                content_cache=source_cache,
+                cached_flags=cached_feature_flags,
+                return_file_flags=True,
+            )
+            repo.features, file_feature_flags = feature_result
+            current_files = {
+                file_record.path: file_record
+                for file_record in db.query(File).filter(File.repo_id == repo.id).all()
+            }
+            for path, flags in file_feature_flags.items():
+                if path in current_files:
+                    current_files[path].feature_flags = flags
             db.commit()
         scan_metrics["feature_detection_seconds"] = round(time.perf_counter() - stage_started, 4)
 
@@ -322,10 +358,13 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
             scan_progress.pop(repo_id, None)
             cancelled_repo_ids.discard(repo_id)
             return
-        repo.status = "completed"
-        repo.scanned_at = datetime.utcnow()
+        repo.status = "indexing embeddings"
         repo.embedding_status = "running"
         db.commit()
+
+        def update_embedding_progress(message: str, pct: float):
+            update_progress(message, 85.0 + (min(max(pct, 0.0), 100.0) * 0.15))
+
         scan_progress[repo_id] = {
             "message": "static analysis completed; indexing embeddings",
             "percent": 85.0,
@@ -334,22 +373,34 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
 
         # 8. Index Embeddings (Folder maps, files, and symbols)
         stage_started = time.perf_counter()
-        embedding_metrics = index_repository_embeddings(db, repo, progress_callback=update_progress)
+        embedding_metrics = index_repository_embeddings(
+            db,
+            repo,
+            progress_callback=update_embedding_progress,
+            repo_path=repo_path,
+        )
         scan_metrics["embedding_seconds"] = round(time.perf_counter() - stage_started, 4)
-        scan_metrics.update(embedding_metrics or {})
+        if embedding_metrics:
+            scan_metrics["database_commits"] = scan_metrics.get("database_commits", 0) + embedding_metrics.pop("database_commits", 0)
+            scan_metrics["database_bulk_operations"] = scan_metrics.get("database_bulk_operations", 0) + embedding_metrics.pop("database_bulk_operations", 0)
+            scan_metrics.update(embedding_metrics)
 
         if repo_id in cancelled_repo_ids:
             scan_progress.pop(repo_id, None)
             cancelled_repo_ids.discard(repo_id)
             return
+        finalization_started = time.perf_counter()
         repo.status = "completed"
         repo.embedding_status = "completed"
         repo.scanned_at = datetime.utcnow()
         db.commit()
+        scan_metrics["finalization_seconds"] = round(time.perf_counter() - finalization_started, 4)
+        scan_metrics["duration_seconds"] = round(time.perf_counter() - scan_started, 2)
+        scan_metrics["total_seconds"] = scan_metrics["duration_seconds"]
         scan_progress[repo_id] = {
             "message": "completed",
             "percent": 100.0,
-            "metrics": {**scan_metrics, "duration_seconds": round(time.perf_counter() - scan_started, 2)},
+            "metrics": scan_metrics.copy(),
         }
         
     except Exception as e:

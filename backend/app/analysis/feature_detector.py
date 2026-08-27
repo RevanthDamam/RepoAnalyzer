@@ -1,7 +1,7 @@
 import os
 import re
 
-def detect_repo_features(repo_path: str, files_list: list) -> dict:
+def detect_repo_features(repo_path: str, files_list: list, content_cache: dict | None = None, cached_flags: dict | None = None, return_file_flags: bool = False):
     """
     Scans files and folder structures to construct a structured JSON of codebase features.
     No AI, zero token cost.
@@ -18,6 +18,9 @@ def detect_repo_features(repo_path: str, files_list: list) -> dict:
     }
     
     file_map = {f["path"]: f for f in files_list}
+    content_cache = content_cache or {}
+    cached_flags = cached_flags or {}
+    file_flags = {}
     
     # 1. Direct file existence checks
     if "Dockerfile" in file_map or "docker-compose.yml" in file_map:
@@ -42,25 +45,27 @@ def detect_repo_features(repo_path: str, files_list: list) -> dict:
             continue
             
         try:
-            with open(full_path, "r", encoding="utf-8", errors="ignore") as file_obj:
-                content = file_obj.read()
-                
-            if auth_terms.search(content):
-                features["authentication"] = True
-            if jwt_terms.search(content):
-                features["jwt"] = True
-            if oauth_terms.search(content):
-                features["oauth"] = True
-            if payment_terms.search(content):
-                features["payments"] = True
-            if redis_terms.search(content):
-                features["redis"] = True
-            if cron_terms.search(content):
-                features["cron"] = True
-            if db_terms.search(content):
-                features["database_connected"] = True
-                
+            flags = cached_flags.get(f["path"])
+            if flags is None:
+                content = content_cache.get(f["path"])
+                if content is None:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as file_obj:
+                        content = file_obj.read()
+                flags = {
+                    "authentication": bool(auth_terms.search(content)),
+                    "jwt": bool(jwt_terms.search(content)),
+                    "oauth": bool(oauth_terms.search(content)),
+                    "payments": bool(payment_terms.search(content)),
+                    "redis": bool(redis_terms.search(content)),
+                    "cron": bool(cron_terms.search(content)),
+                    "database_connected": bool(db_terms.search(content)),
+                }
+            file_flags[f["path"]] = flags
+            for key, value in flags.items():
+                features[key] = features[key] or bool(value)
         except Exception:
             pass
-            
+
+    if return_file_flags:
+        return features, file_flags
     return features

@@ -39,11 +39,10 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
             # Parse symbols (classes, functions) statically
             symbols_list = parse_code_symbols(compressed, file_record.filename)
             
-            # Remove old symbols for this file
-            db.query(Symbol).filter(Symbol.file_id == file_record.id).delete()
-            db.commit()
-            
-            # Store symbols in DB
+            # Replace old symbols and batch the write to reduce SQLite lock time.
+            db.query(Symbol).filter(Symbol.file_id == file_record.id).delete(synchronize_session=False)
+
+            # Store symbols in DB.
             for sym in symbols_list:
                 db_sym = Symbol(
                     repo_id=repo.id,
@@ -55,11 +54,15 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
                     raw_code=sym["raw_code"]
                 )
                 db.add(db_sym)
-            db.commit()
-                
+
+            if (idx + 1) % 25 == 0:
+                db.commit()
+
         except Exception as e:
             print(f"Failed parsing file metadata: {file_record.path} {e}")
             db.rollback()
+
+    db.commit()
 
     # Create Folder Records (Bottom-Up)
     folder_paths = set()
@@ -84,5 +87,6 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
                 parent_path=os.path.dirname(folder_dir).replace("\\", "/")
             )
             db.add(folder_record)
-            db.commit()
+
+    db.commit()
 

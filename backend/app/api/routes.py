@@ -41,6 +41,7 @@ router = APIRouter()
 # In-memory dictionary to track real-time scanning progress per repo
 scan_progress = {}
 repo_creation_lock = Lock()
+cancelled_repo_ids = set()
 
 class ScanRequest(BaseModel):
     path: str = Field(..., min_length=1, max_length=2048)
@@ -154,10 +155,17 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         return
 
     try:
+        progress_commits = [0]
+
         def update_progress(message: str, pct: float):
+            if repo_id in cancelled_repo_ids:
+                raise RuntimeError("scan cancelled")
             scan_progress[repo_id] = {"message": message, "percent": round(pct, 1)}
             repo.status = message
-            db.commit()
+            progress_commits[0] += 1
+            if progress_commits[0] >= 8:
+                db.commit()
+                progress_commits[0] = 0
             print(f"[RepoScan {repo_id}] {message} - {pct:.1f}%")
 
         # 2.0 Git Cloning Check
@@ -241,7 +249,7 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         # 4 & 7. AST extraction & Caching & Static Parsing
         update_progress("Extracting symbols & static metadata", 40.0)
         run_static_analysis_pipeline(db, repo, repo_path, progress_callback=update_progress)
-        
+
         # 5. Build Dependency Graph (fan-in/fan-out metrics)
         update_progress("Building import dependency graph", 65.0)
         analyze_dependencies(db, repo.id)
@@ -256,12 +264,18 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         update_progress("Indexing semantic vector embeddings", 85.0)
         index_repository_embeddings(db, repo, progress_callback=update_progress)
 
+        if repo_id in cancelled_repo_ids:
+            return
         repo.status = "completed"
         repo.scanned_at = datetime.utcnow()
         db.commit()
         scan_progress[repo_id] = {"message": "completed", "percent": 100.0}
         
     except Exception as e:
+        if repo_id in cancelled_repo_ids:
+            scan_progress.pop(repo_id, None)
+            cancelled_repo_ids.discard(repo_id)
+            return
         err_msg = f"Scan failed: {str(e)}\n{traceback.format_exc()}"
         print(err_msg)
         repo.status = "failed"
@@ -405,6 +419,8 @@ def delete_repository(
     session_id: str = Depends(get_session_id)
 ):
     repo = require_repo(repo_id, session_id, db)
+    with repo_creation_lock:
+        cancelled_repo_ids.add(repo_id)
     repo_path = Path(repo.path).resolve()
     clone_root = (Path(__file__).resolve().parents[2] / "temp_repos").resolve()
 

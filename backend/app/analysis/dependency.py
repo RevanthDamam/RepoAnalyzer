@@ -1,153 +1,135 @@
 import os
 import re
+from collections import defaultdict
+
 from sqlalchemy.orm import Session
-from ..database.models import File, Dependency
+
+from ..database.models import Dependency, File
 
 # Regexes to capture import targets
 PY_IMPORT_PATTERN = re.compile(r'^\s*(?:from\s+([A-Za-z0-9_.]+)\s+import|import\s+([A-Za-z0-9_., ]+))')
 JS_IMPORT_PATTERN = re.compile(r'(?:import|from|require)\s*\(\s*[\'"`]([^\'"`]+)[\'"`]\s*\)|import\s+.*?\s+from\s+[\'"`]([^\'"`]+)[\'"`]')
+DEPENDENCY_BATCH_SIZE = max(1, int(os.getenv("DEPENDENCY_BATCH_SIZE", "1000")))
+
 
 def extract_raw_imports(content: str, ext: str) -> list:
-    """Extracts raw import paths/names from source content."""
+    """Extract raw import paths/names from source content."""
     imports = []
     lines = content.splitlines()
-    
-    if ext == '.py':
+
+    if ext == ".py":
         for line in lines:
             if match := PY_IMPORT_PATTERN.search(line):
-                # Captures either from group(1) or import group(2)
                 target = match.group(1) or match.group(2)
                 if target:
-                    # Clean up multiple imports on same line e.g., import os, sys
-                    for t in target.split(','):
-                        imports.append(t.strip())
-                        
-    elif ext in ('.js', '.jsx', '.ts', '.tsx'):
+                    imports.extend(target_part.strip() for target_part in target.split(","))
+    elif ext in (".js", ".jsx", ".ts", ".tsx"):
         for line in lines:
-            # Match standard ES6 imports or require()
-            matches = JS_IMPORT_PATTERN.findall(line)
-            for m in matches:
-                # findall returns tuple of groups, filter to non-empty
-                target = next((x for x in m if x), None)
+            for match in JS_IMPORT_PATTERN.findall(line):
+                target = next((value for value in match if value), None)
                 if target:
                     imports.append(target)
-                    
+
     return list(set(imports))
 
-def resolve_import_path(import_target: str, source_file_path: str, files_by_path: dict) -> str:
-    """
-    Attempts to resolve an import string into a relative file path matching one of the repo files.
-    """
-    # 1. Check relative JS imports e.g. "./utils" or "../components/Button"
-    if import_target.startswith('.'):
+
+def build_path_indexes(files_by_path: dict) -> dict:
+    """Build slash-boundary suffix indexes for near-O(1) import resolution."""
+    suffix_index = defaultdict(list)
+    for path in files_by_path:
+        parts = path.split("/")
+        for index in range(len(parts)):
+            suffix_index["/".join(parts[index:])].append(path)
+    return {key: sorted(value) for key, value in suffix_index.items()}
+
+
+def resolve_import_path(import_target: str, source_file_path: str, files_by_path: dict, suffix_index=None) -> str:
+    """Resolve an import string to a relative path matching repository files."""
+    if import_target.startswith("."):
         source_dir = os.path.dirname(source_file_path)
-        # Normalize relative path
         norm_path = os.path.normpath(os.path.join(source_dir, import_target)).replace("\\", "/")
-        
-        # Try direct matches with common extensions
-        for ext in ('.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'):
-            test_path = norm_path + ext if not ext.startswith('/') else norm_path + ext
-            # Trim leading "./" if normpath creates it
-            test_path = test_path.lstrip('./')
+
+        for ext in (".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index.js"):
+            test_path = norm_path + ext if not ext.startswith("/") else norm_path + ext
+            test_path = test_path.lstrip("./")
             if test_path in files_by_path:
                 return test_path
-        
-        # Check raw match
         if norm_path in files_by_path:
             return norm_path
 
-    # 2. Check absolute/absolute-aliased imports (e.g. "app/database" or "src/auth")
-    # Python absolute: e.g. "app.database" or "app.scanner.crawler"
-    cleaned_target = import_target.replace('.', '/')
-    for ext in ('.py', '.ts', '.tsx', '.js', '.jsx'):
-        # Direct check
-        test_path1 = cleaned_target + ext
-        if test_path1 in files_by_path:
-            return test_path1
-            
-        # Inside folders check (like app/database.py from router)
-        for rel_path in files_by_path:
-            if rel_path.endswith(test_path1):
-                return rel_path
+    cleaned_target = import_target.replace(".", "/")
+    for ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
+        test_path = cleaned_target + ext
+        if test_path in files_by_path:
+            return test_path
+        matches = (suffix_index or {}).get(test_path, [])
+        if matches:
+            return matches[0]
 
     return ""
 
-def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, changed_paths=None) -> None:
-    """
-    Builds the codebase import graph, inserts dependency relations, 
-    and updates lines metrics (fan_in/fan_out) inside the Files table.
-    Reads raw_content_compressed from DB; falls back to reading file from disk
-    if repo_path is provided and the compressed content is missing.
-    """
-    if changed_paths is not None and not changed_paths:
-        return
 
-    # 1. Fetch all repository files and build relative lookup dict
+def analyze_dependencies(db: Session, repo_id: int, repo_path: str = None, changed_paths=None) -> dict:
+    """Build the import graph and fan-in/fan-out metrics in bounded DB batches."""
+    if changed_paths is not None and not changed_paths:
+        return {"dependencies_total": 0, "dependency_files_analyzed": 0}
+
     db_files = db.query(File).filter(File.repo_id == repo_id).all()
-    files_by_path = {f.path: f for f in db_files}
-    
-    # If repo_path not provided, try to get it from the repo record
+    files_by_path = {file_record.path: file_record for file_record in db_files}
+    suffix_index = build_path_indexes(files_by_path)
+
     if not repo_path:
         from ..database.models import Repository
+
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
         repo_path = repo.path if repo else None
-    
-    # Reset old dependencies
+
     db.query(Dependency).filter(Dependency.repo_id == repo_id).delete()
     db.commit()
-    
-    # Track metrics
-    fan_out_counts = {f.id: 0 for f in db_files}
-    fan_in_counts = {f.id: 0 for f in db_files}
-    
+
+    fan_out_counts = {file_record.id: 0 for file_record in db_files}
+    fan_in_counts = {file_record.id: 0 for file_record in db_files}
     dependencies_to_add = []
-    
-    for f in db_files:
+
+    for file_record in db_files:
         content = None
-        
-        # Read directly from disk
         if repo_path:
-            full_path = os.path.join(repo_path, f.path)
+            full_path = os.path.join(repo_path, file_record.path)
             if os.path.exists(full_path):
                 try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
-                        content = fh.read()
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as handle:
+                        content = handle.read()
                 except Exception:
                     continue
-        
+
         if not content:
             continue
-            
-        raw_imports = extract_raw_imports(content, f.extension)
+
         resolved_targets = set()
-        
-        for imp in raw_imports:
-            resolved_path = resolve_import_path(imp, f.path, files_by_path)
-            if resolved_path and resolved_path != f.path:
+        for import_target in extract_raw_imports(content, file_record.extension):
+            resolved_path = resolve_import_path(import_target, file_record.path, files_by_path, suffix_index)
+            if resolved_path and resolved_path != file_record.path:
                 resolved_targets.add(resolved_path)
-                
-        # Insert dependencies
+
         for target in resolved_targets:
-            dep_row = Dependency(
+            dependencies_to_add.append(Dependency(
                 repo_id=repo_id,
-                from_file_path=f.path,
+                from_file_path=file_record.path,
                 to_file_path=target,
-                dependency_type="import"
-            )
-            dependencies_to_add.append(dep_row)
-            
-            # Increment counts
-            fan_out_counts[f.id] += 1
-            target_file_id = files_by_path[target].id
-            fan_in_counts[target_file_id] += 1
-            
-    # Save dependency rows
-    db.add_all(dependencies_to_add)
+                dependency_type="import",
+            ))
+            fan_out_counts[file_record.id] += 1
+            fan_in_counts[files_by_path[target].id] += 1
+
+    for start in range(0, len(dependencies_to_add), DEPENDENCY_BATCH_SIZE):
+        db.add_all(dependencies_to_add[start:start + DEPENDENCY_BATCH_SIZE])
     db.commit()
-    
-    # Update File metric counters
-    for f in db_files:
-        f.fan_out = fan_out_counts.get(f.id, 0)
-        f.fan_in = fan_in_counts.get(f.id, 0)
-        
+
+    for file_record in db_files:
+        file_record.fan_out = fan_out_counts[file_record.id]
+        file_record.fan_in = fan_in_counts[file_record.id]
     db.commit()
+    return {
+        "dependencies_total": len(dependencies_to_add),
+        "dependency_files_analyzed": len(db_files),
+    }

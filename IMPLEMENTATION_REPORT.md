@@ -19,10 +19,11 @@ The repository becomes `completed` and statically browsable before the embedding
 | Discovery and hashing | Read and hashed every analyzable file | Compare cached path/size/mtime first; hash only new or metadata-changed files unless strict mode is enabled |
 | File persistence | Updated file metadata without incremental work classification | Computes changed, skipped, and removed path sets and persists size/mtime/hash metadata |
 | Static analysis | Read, compressed, and parsed every file | Reads and parses only changed files using original source; unchanged symbols and metrics remain intact |
-| Dependencies | Rebuilt on every scan | Skips when there are no changed paths; rebuilds the full graph when changes exist to preserve fan-in/fan-out correctness |
+| Dependencies | Rebuilt on every scan and import resolution can scan every repository path | Skips when there are no changed paths; changed scans use a precomputed suffix index and bounded inserts, while rebuilding the full graph to preserve fan-in/fan-out correctness |
 | Features and technology | Recomputed on every scan | Recomputed only when files changed or the repository has no cached result |
 | Embeddings | Cleared and regenerated | Reuses content-hash matches, generates only missing units, commits batches, and removes stale rows after replacement succeeds |
 | User availability | Static and embedding work completed as one blocking phase | Repository is browsable after static analysis; embedding progress is separately observable and resumable |
+| Folder persistence | Query and commit for each folder | Prefetch existing folder paths and insert missing folders in one batch |
 | Retrieval | Vector search plus exact source snippets | Vector candidates are merged with bounded exact file/path/symbol candidates and deduplicated |
 
 The orchestration and progress metrics are implemented in [`routes.py`][1], discovery in [`crawler.py`][2], original-source static processing in [`folder_summary.py`][3] and [`ast_parser.py`][4], and cache-aware embedding persistence in [`generator.py`][5].
@@ -39,11 +40,19 @@ The static pipeline no longer creates a compressed source copy before complexity
 
 Only changed files are opened, parsed, and have their symbols replaced. Folder reconciliation remains inexpensive metadata work, and unchanged symbols and file metrics are retained. Static commits use `STATIC_ANALYSIS_BATCH_SIZE` rather than committing once per file.
 
+### Old baseline comparison
+
+The attached old repository is at commit `18a263f` (`Fix Groq model deprecation causing summary 502`). Its apparent speed advantage is not a valid functional performance baseline: the old static pipeline compresses Python source by removing indentation before calling the AST parser. On the shared deterministic fixture, the old run processed 81 files but produced **0 symbol rows and 0 embedding rows**. It was faster because required analysis silently failed or was skipped, so that behavior must not be restored.
+
+To obtain an apples-to-apples control, the benchmark also includes `legacy-valid`, which keeps the old per-file symbol delete/commit/insert/commit pattern and sequential embedding calls but parses original source. On the same 81-file, 12,000-line fixture, the optimized current first pass took **6.0158 seconds with 58 database commits and 49 batched model calls**, while the valid legacy control took **6.1621 seconds with 323 database commits and 3,080 model calls**. Both produced 3,080 symbols and 3,080 embeddings. This measured comparison confirms that the transaction and embedding batching changes improve the valid path, while the old commit’s 0.1363-second result is functionally incomparable.
+
 ### Embedding cache, batching, and resumability
 
 The embedding cache is keyed by entity type, path, and a deterministic SHA-256 hash of the embedding text. Existing legacy rows without `content_hash` are backfilled from their stored text when possible. Rows are not deleted until replacement rows have been committed. Local model generation uses `EMBEDDING_BATCH_SIZE` outer batches and `EMBEDDING_MODEL_BATCH_SIZE` model batches; each successfully generated batch is persisted immediately. If a later batch fails, already committed vectors remain available and the next indexing attempt can reuse them.
 
 The current corpus intentionally remains compatible with the prior implementation: README and symbol entities are indexed with the same text format. No new external queue, Redis instance, Celery worker, or other infrastructure was introduced.
+
+The dependency resolver now builds a suffix index once per full-graph rebuild. Exact paths remain the first lookup, while module/file suffix variants use indexed candidates instead of iterating through every repository path for every import. Dependency rows are inserted in `DEPENDENCY_BATCH_SIZE` chunks, preserving the existing full-rebuild semantics on changed scans.
 
 ### RAG and fallback behavior
 
@@ -76,6 +85,7 @@ Startup migration remains lightweight and backward-compatible. Existing database
 | `STRICT_HASHING` | `false` | Recompute SHA-256 on every analyzable file when set to `true`, `1`, or `yes` |
 | `CRAWL_PROGRESS_INTERVAL_SECONDS` | `0.5` | Minimum interval between crawler heartbeat progress updates |
 | `STATIC_ANALYSIS_BATCH_SIZE` | `100` | Number of changed files between static-analysis commits |
+| `DEPENDENCY_BATCH_SIZE` | `1000` | Number of dependency rows inserted per batch |
 | `EMBEDDING_BATCH_SIZE` | `64` | Number of texts per embedding-generation/persistence batch |
 | `EMBEDDING_MODEL_BATCH_SIZE` | `32` | Number of texts passed to the local model per encode call |
 
@@ -103,3 +113,5 @@ The in-memory cancellation set remains process-local, as before. Batch commits m
 [6]: backend/bench_incremental_indexing.py "Deterministic incremental indexing benchmark harness"
 [7]: backend/.env.example "Deployment and performance environment settings"
 [8]: backend/app/scanner/crawler.py "Crawler heartbeat progress and cancellation checkpoints"
+[9]: backend/app/analysis/dependency.py "Indexed dependency resolution and bounded dependency persistence"
+[10]: backend/bench_incremental_indexing.py "Current, valid-legacy-control, and old-commit benchmark modes"

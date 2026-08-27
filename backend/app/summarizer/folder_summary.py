@@ -78,19 +78,22 @@ def run_static_analysis_pipeline(db: Session, repo: Repository, repo_path: str, 
                 folder_paths.add("/".join(parts[:i]))
                 
     sorted_folders = sorted(list(folder_paths), key=lambda x: len(x.split('/')), reverse=True)
-    total_folders = len(sorted_folders)
-    
-    for idx, folder_dir in enumerate(sorted_folders):
-        folder_record = db.query(Folder).filter(Folder.repo_id == repo.id, Folder.path == folder_dir).first()
-        if not folder_record:
-            folder_record = Folder(
-                repo_id=repo.id,
-                path=folder_dir,
-                folder_name=os.path.basename(folder_dir),
-                parent_path=os.path.dirname(folder_dir).replace("\\", "/")
-            )
-            db.add(folder_record)
-
+    existing_folder_paths = {
+        folder.path
+        for folder in db.query(Folder).filter(Folder.repo_id == repo.id).all()
+    }
+    new_folders = [
+        Folder(
+            repo_id=repo.id,
+            path=folder_dir,
+            folder_name=os.path.basename(folder_dir),
+            parent_path=os.path.dirname(folder_dir).replace("\\", "/"),
+        )
+        for folder_dir in sorted_folders
+        if folder_dir not in existing_folder_paths
+    ]
+    if new_folders:
+        db.add_all(new_folders)
     db.commit()
     return {
         "files_processed": total_files,

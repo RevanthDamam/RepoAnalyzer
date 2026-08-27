@@ -304,8 +304,9 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         # 5. Build Dependency Graph (fan-in/fan-out metrics)
         update_progress("Building import dependency graph", 65.0)
         stage_started = time.perf_counter()
-        analyze_dependencies(db, repo.id, repo_path, changed_paths=changed_paths)
+        dependency_metrics = analyze_dependencies(db, repo.id, repo_path, changed_paths=changed_paths)
         scan_metrics["dependency_seconds"] = round(time.perf_counter() - stage_started, 4)
+        scan_metrics.update(dependency_metrics or {})
         
         # 6. Feature Detection (payments, auth, redis, docker checks)
         update_progress("Detecting repository codebase features", 75.0)

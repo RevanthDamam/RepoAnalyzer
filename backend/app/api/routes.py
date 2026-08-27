@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import traceback
 from datetime import datetime, timedelta
+from threading import Lock
 from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -25,6 +26,7 @@ from ..rag.agents import query_repository
 from ..database.connection import SessionLocal
 from ..security import (
     MAX_FILES_PER_REPOSITORY,
+    MAX_REPOSITORIES_PER_SESSION,
     MAX_SOURCE_RESPONSE_BYTES,
     display_repository_path,
     resolve_local_repository,
@@ -37,6 +39,7 @@ router = APIRouter()
 
 # In-memory dictionary to track real-time scanning progress per repo
 scan_progress = {}
+repo_creation_lock = Lock()
 
 class ScanRequest(BaseModel):
     path: str = Field(..., min_length=1, max_length=2048)
@@ -259,23 +262,33 @@ def scan_endpoint(
         if github_url:
             github_url = validate_git_source(github_url)
     
-    # Check if this session already has the same repository indexed
-    repo = db.query(Repository).filter(
-        Repository.path == path,
-        Repository.session_id == session_id
-    ).first()
-    if not repo:
-        repo = Repository(
-            name=name,
-            path=path,
-            github_url=github_url,
-            session_id=session_id,
-            status="pending"
-        )
-        db.add(repo)
-        db.commit()
-        db.refresh(repo)
-        
+    # Check/create under one lock so concurrent requests cannot exceed the cap.
+    with repo_creation_lock:
+        repo = db.query(Repository).filter(
+            Repository.path == path,
+            Repository.session_id == session_id
+        ).first()
+        if not repo:
+            session_repo_count = db.query(Repository).filter(
+                Repository.session_id == session_id
+            ).count()
+            if session_repo_count >= MAX_REPOSITORIES_PER_SESSION:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"This browser session can scan up to {MAX_REPOSITORIES_PER_SESSION} repositories. Delete one before adding another.",
+                )
+
+            repo = Repository(
+                name=name,
+                path=path,
+                github_url=github_url,
+                session_id=session_id,
+                status="pending"
+            )
+            db.add(repo)
+            db.commit()
+            db.refresh(repo)
+
     repo.status = "pending"
     db.commit()
     scan_progress[repo.id] = {"message": "pending", "percent": 0.0}

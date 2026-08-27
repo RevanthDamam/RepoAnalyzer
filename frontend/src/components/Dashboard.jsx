@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Files, Cpu, Layers, RefreshCw, Zap, ArrowRight, Star, GitMerge, BookOpen } from 'lucide-react';
+import { Files, Cpu, Layers, RefreshCw, Zap, ArrowRight, Star, BookOpen } from 'lucide-react';
 import { apiFetch } from '../utils/api';
 
 

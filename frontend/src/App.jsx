@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { RepoSelector } from './components/RepoSelector';
 import { Dashboard } from './components/Dashboard';
-import { FileTree } from './components/FileTree';
 import { ChatInterface } from './components/ChatInterface';
 import { Architecture } from './components/Architecture';
 import { Dependencies } from './components/Dependencies';
@@ -10,8 +9,8 @@ import { apiFetch } from './utils/api';
 
 
 import {
-  Bot, Code, RefreshCw,
-  LayoutGrid, Network, GitFork, BookOpen, Settings, ChevronLeft, ChevronRight, Folder
+  Bot, RefreshCw,
+  LayoutGrid, Network, GitFork, ChevronLeft, Folder
 } from 'lucide-react';
 
 export default function App() {
@@ -23,8 +22,6 @@ export default function App() {
   // Navigation tabs for the MAIN central area via vertical sidebar
   const [activeNavTab, setActiveNavTab] = useState('overview');
 
-  // Workspace tabs for the RIGHT code/chat panel
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('chat');
   const [loadingRepo, setLoadingRepo] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
 
@@ -68,23 +65,12 @@ export default function App() {
     setSelectedRepoId(repoId);
     fetchRepoDetails(repoId);
     setActiveNavTab('overview');
-    setActiveWorkspaceTab('chat');
   };
 
   const handleSelectFile = (fileId) => {
     setSelectedFileId(fileId);
     if (selectedRepoId) {
       fetchFileDetails(selectedRepoId, fileId);
-    }
-    setActiveWorkspaceTab('file');
-  };
-
-  const handleSelectFileByPath = (path) => {
-    if (repoDetails) {
-      const matched = repoDetails.files.find(f => f.path === path);
-      if (matched) {
-        handleSelectFile(matched.id);
-      }
     }
   };
 
@@ -294,15 +280,3 @@ export default function App() {
     </div>
   );
 }
-
-// Simple spin animation style injector helper
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  .animate-spin {
-    animation: spin 1s linear infinite;
-  }
-`;
-document.head.appendChild(style);

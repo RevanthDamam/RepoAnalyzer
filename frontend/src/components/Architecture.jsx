@@ -1,9 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { 
-  Server, Layout, Settings, 
-  Layers, Cpu, FolderKanban, 
-  Boxes, Code2, Paintbrush, FileJson, 
-  Terminal, Info, ZoomIn, ZoomOut, Maximize2,
+  Server, Layout, Settings, Cpu, FileJson,
+  Maximize2,
   X, Folder, FolderOpen, FileCode, FileText, File, RefreshCw, Code
 } from 'lucide-react';
 import { getBriefExplanation } from '../utils/fileExplanation';
@@ -40,7 +38,7 @@ const getFileIcon = (ext) => {
 const getFolderExplanation = (folderPath, filesCount, totalLoc) => {
   const p = folderPath.toLowerCase();
   let baseDesc = '';
-  if (p === 'configs' || p === 'configs') {
+  if (p === 'configs') {
     baseDesc = 'Contains project configurations, environment rules, and dependency manifests.';
   } else if (p.includes('components')) {
     baseDesc = 'Houses reusable UI components, action dialogs, and layout elements.';
@@ -195,8 +193,6 @@ const computeTreeLayout = (files, repoName) => {
 };
 
 export const Architecture = ({ 
-  repoId, 
-  selectedFileId, 
   fileDetails, 
   loadingFile, 
   onSelectFile, 

@@ -1198,3 +1198,20 @@ main {
 }
 
 
+
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.scan-limit-note {
+  margin: -0.35rem auto 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

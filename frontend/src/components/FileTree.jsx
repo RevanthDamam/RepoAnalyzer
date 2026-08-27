@@ -129,10 +129,10 @@ export const FileTree = ({ files, selectedFileId, onSelectFile }) => {
   };
 
   // Filter files by search query
-  const filteredFiles = files.filter(f => 
-    f.filename.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredFiles = React.useMemo(() => files.filter(f =>
+    f.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
     f.path.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [files, searchQuery]);
 
   // Build tree model from filtered list
   const treeModel = buildTree(filteredFiles);
@@ -151,7 +151,7 @@ export const FileTree = ({ files, selectedFileId, onSelectFile }) => {
       });
       setExpandedFolders(newExpanded);
     }
-  }, [searchQuery, files]);
+  }, [searchQuery, filteredFiles]);
 
   return (
     <div className="glass explorer-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', border: 'none' }}>

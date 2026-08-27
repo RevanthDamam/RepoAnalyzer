@@ -14,11 +14,14 @@ const tokenClass = (token) => {
 const CodeHighlight = ({ code, extension }) => {
   const langLabel = useMemo(() => {
     const ext = extension ? extension.toLowerCase() : '';
-    const labels = {
-      '.js': 'JavaScript', '.jsx': 'JavaScript', '.ts': 'TypeScript', '.tsx': 'TypeScript',
-      '.py': 'Python', '.json': 'JSON', '.html': 'HTML', '.css': 'CSS', '.java': 'Java'
-    };
-    return labels[ext] || 'Code';
+    if (['.js', '.jsx'].includes(ext)) return 'JavaScript';
+    if (['.ts', '.tsx'].includes(ext)) return 'TypeScript';
+    if (ext === '.py') return 'Python';
+    if (ext === '.json') return 'JSON';
+    if (ext === '.html') return 'HTML';
+    if (ext === '.css') return 'CSS';
+    if (ext === '.java') return 'Java';
+    return 'Code';
   }, [extension]);
 
   const lines = useMemo(() => {
@@ -39,17 +42,30 @@ const CodeHighlight = ({ code, extension }) => {
   }, [code]);
 
   return (
-    <div className="code-viewer glass-depth">
-      <div className="code-viewer-header">
-        <div className="window-dots" aria-hidden="true"><span /><span /><span /></div>
-        <span className="code-language">{langLabel}</span>
-        <span className="code-live-indicator">LIVE SOURCE</span>
+    <div style={{
+      display: 'flex', flexDirection: 'column', background: '#18181c',
+      border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px',
+      overflow: 'hidden', height: '100%', minHeight: 0,
+      boxShadow: '0 8px 30px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.25rem',
+        background: '#141416', borderBottom: '1px solid rgba(255,255,255,0.03)',
+        color: '#ffffff', fontSize: '0.85rem', fontFamily: 'Outfit, sans-serif',
+        fontWeight: 600, flexShrink: 0
+      }}>
+        <span style={{ color: '#f472b6', fontWeight: 'bold' }}>&lt;/&gt;</span>
+        <span>{langLabel}</span>
       </div>
-      <pre className="code-scroll-area">
+      <pre style={{
+        margin: 0, padding: '1.25rem', overflow: 'auto', flex: 1,
+        fontSize: '0.82rem', lineHeight: '1.5', fontFamily: 'JetBrains Mono, monospace',
+        color: '#f8f8f2', background: '#18181c', textAlign: 'left'
+      }}>
         <code>{lines.map((line, index) => (
-          <span className="code-line" key={index}>
-            <span className="line-number">{String(index + 1).padStart(3, '0')}</span>
-            <span className="line-content">{line}</span>
+          <span key={index} style={{ display: 'block' }}>
+            <span style={{ display: 'inline-block', width: '3rem', marginRight: '1rem', color: 'rgba(148,163,184,0.34)', userSelect: 'none', textAlign: 'right' }}>{index + 1}</span>
+            {line}
           </span>
         ))}</code>
       </pre>
@@ -61,32 +77,39 @@ export const FilesView = ({ files, selectedFileId, fileDetails, loadingFile, onS
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
-    <div className="files-workspace">
-      <div className={`file-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''}`}>
+    <div style={{ display: 'flex', gap: '2rem', height: '100%', minHeight: 0, width: '100%' }}>
+      <div style={{
+        width: isSidebarCollapsed ? '0px' : '280px', height: '100%', flexShrink: 0,
+        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)', position: 'relative',
+        display: 'flex', flexDirection: 'column', background: 'rgba(10, 10, 15, 0.55)',
+        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: 'none',
+        borderRadius: '12px', boxShadow: isSidebarCollapsed ? 'none' : '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 10px rgba(250, 204, 21, 0.05)',
+        padding: isSidebarCollapsed ? '0' : '1rem 0.5rem', boxSizing: 'border-box'
+      }}>
         <button
           className="sidebar-toggle-btn"
           onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
           title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={isSidebarCollapsed ? 'Expand file explorer' : 'Collapse file explorer'}
+          style={{ left: isSidebarCollapsed ? '10px' : 'auto', right: isSidebarCollapsed ? 'auto' : '-12px' }}
         >
           {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
-        <div className="file-tree-frame">
+        <div style={{ flex: 1, minHeight: 0, opacity: isSidebarCollapsed ? 0 : 1, transition: 'opacity 0.2s', overflow: 'hidden' }}>
           <FileTree files={files} selectedFileId={selectedFileId} onSelectFile={onSelectFile} />
         </div>
       </div>
 
-      <div className="file-code-pane">
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, paddingRight: '1rem' }}>
         {loadingFile || !fileDetails ? (
-          <div className="empty-code-state">
-            <RefreshCw className="animate-spin" size={24} />
-            <p>Select a file from the explorer to inspect its source code.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', minHeight: '200px' }}>
+            <RefreshCw className="animate-spin" size={24} style={{ color: 'var(--accent-primary)' }} />
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>Select a file from the explorer on the left to view its source code...</p>
           </div>
         ) : (
-          <CodeHighlight
-            code={fileDetails.raw_content || fileDetails.raw_content_compressed || '// Empty file'}
-            extension={fileDetails.extension || `.${fileDetails.filename.split('.').pop()}`}
-          />
+          <div style={{ flex: 1, height: '100%', minHeight: 0, paddingBottom: '1rem' }}>
+            <CodeHighlight code={fileDetails.raw_content || fileDetails.raw_content_compressed || '// Empty file'} extension={fileDetails.extension || `.${fileDetails.filename.split('.').pop()}`} />
+          </div>
         )}
       </div>
     </div>

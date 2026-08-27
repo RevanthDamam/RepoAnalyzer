@@ -180,6 +180,7 @@ export const RepoSelector = ({ onSelectRepo }) => {
         </p>
 
         {/* Search Input Bar form */}
+        <p className="scan-limit-note">Limit: 2 repositories per browser session. Delete an index to free a slot.</p>
         <div style={{ marginTop: '1rem' }}>
           {error && (
             <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--color-high)', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', textAlign: 'left', maxWidth: '720px', margin: '0 auto 1rem auto' }}>

@@ -153,7 +153,11 @@ export const ChatInterface = ({ repoId }) => {
 
                 <div className="message-content">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
+                    {msg.content
+                      ? msg.content
+                          .replace(/\\n/g, '\n')
+                          .replace(/<br\s*\/?>/gi, '\n')
+                      : ''}
                   </ReactMarkdown>
                 </div>
 
@@ -186,7 +190,11 @@ export const ChatInterface = ({ repoId }) => {
                         <div className="agent-name-tag">{activeSubAgentTab[msg.id]} Report</div>
                         <div className="agent-analysis">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {msg.subAgents[activeSubAgentTab[msg.id]]}
+                            {msg.subAgents[activeSubAgentTab[msg.id]]
+                              ? msg.subAgents[activeSubAgentTab[msg.id]]
+                                  .replace(/\\n/g, '\n')
+                                  .replace(/<br\s*\/?>/gi, '\n')
+                              : ''}
                           </ReactMarkdown>
                         </div>
                       </div>

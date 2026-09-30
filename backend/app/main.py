@@ -8,12 +8,12 @@ from .database.connection import init_db, migrate_db
 
 
 def configured_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "*")
+    if raw.strip() == "*":
+        return ["*"]
     return [
         origin.strip().rstrip("/")
-        for origin in os.getenv(
-            "CORS_ORIGINS",
-            "https://repo-analyzer-eight.vercel.app,http://localhost:5173",
-        ).split(",")
+        for origin in raw.split(",")
         if origin.strip()
     ]
 
@@ -28,14 +28,16 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=configured_origins(),
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Session-ID"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")

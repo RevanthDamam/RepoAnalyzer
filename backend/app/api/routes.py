@@ -607,29 +607,37 @@ def get_repo_manifest(
             pass
 
     # --- Parse package.json ---
-    pkg_path = os.path.join(repo.path, "package.json")
-    if not os.path.exists(pkg_path):
-        pkg_path = os.path.join(repo.path, "frontend", "package.json")
+    pkg_paths = [
+        os.path.join(repo.path, "package.json"),
+        os.path.join(repo.path, "frontend", "package.json"),
+    ]
+    # Check for any package.json indexed in the repo if top-level ones don't exist
+    if not any(os.path.exists(p) for p in pkg_paths):
+        matching_file = db.query(File).filter(File.repo_id == repo.id, File.filename == "package.json").first()
+        if matching_file:
+            pkg_paths.append(os.path.join(repo.path, matching_file.path))
 
-    if os.path.exists(pkg_path):
-        try:
-            import json
-            with open(pkg_path, "r", encoding="utf-8", errors="ignore") as f:
-                pkg_json = json.load(f)
-            all_deps = {
-                **pkg_json.get("dependencies", {}),
-                **pkg_json.get("devDependencies", {})
-            }
-            for pkg_name in all_deps:
-                cat = KNOWN_CATEGORIES.get(pkg_name.lower(), {"type": "Library", "lang": "JavaScript"})
-                packages.append({
-                    "name": pkg_name,
-                    "type": cat["type"],
-                    "lang": cat["lang"],
-                    "ecosystem": "frontend"
-                })
-        except Exception:
-            pass
+    for pkg_path in pkg_paths:
+        if os.path.exists(pkg_path):
+            try:
+                import json
+                with open(pkg_path, "r", encoding="utf-8", errors="ignore") as f:
+                    pkg_json = json.load(f)
+                all_deps = {
+                    **pkg_json.get("dependencies", {}),
+                    **pkg_json.get("devDependencies", {})
+                }
+                for pkg_name in all_deps:
+                    cat = KNOWN_CATEGORIES.get(pkg_name.lower(), {"type": "Library", "lang": "JavaScript"})
+                    packages.append({
+                        "name": pkg_name,
+                        "type": cat["type"],
+                        "lang": cat["lang"],
+                        "ecosystem": "frontend"
+                    })
+                break
+            except Exception:
+                pass
 
     # Group by ecosystem then lang
     backend_pkgs = [p for p in packages if p["ecosystem"] == "backend"]
@@ -797,15 +805,29 @@ Rules:
             max_tokens=900
         )
         raw = completion.choices[0].message.content.strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        summary_data = _json.loads(raw)
+        # Find outer JSON object {...}
+        start_idx = raw.find("{")
+        end_idx = raw.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            raw_json = raw[start_idx:end_idx + 1]
+        else:
+            raw_json = raw
+        summary_data = _json.loads(raw_json)
     except Exception as e:
         print(f"[summary] generation failed: {e}")
-        raise HTTPException(status_code=502, detail="Summary generation failed. Please retry.") from e
+        # Return fallback summary from static technologies instead of failing completely with 502
+        lang = repo.technologies.get("language", "Unknown") if repo.technologies else "Unknown"
+        summary_data = {
+            "project_overview": f"{repo.name} is a codebase primarily written in {lang}.",
+            "primary_purpose": {
+                "goal": f"Codebase for {repo.name}",
+                "target_users": "Developers and users of the application",
+                "main_functionality": f"Application powered by {lang}"
+            },
+            "core_features": [f"Built using {lang}"],
+            "request_flow": ["User interaction", "Application processing", "Client render"],
+            "engineering_highlights": [f"Configured with {lang}"]
+        }
 
     # Cache on repository
     repo.codebase_summary = summary_data

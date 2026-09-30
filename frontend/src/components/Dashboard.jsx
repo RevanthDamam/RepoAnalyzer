@@ -70,11 +70,27 @@ function SummaryPanel({ repoId, repoName }) {
   const [error, setError] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
 
-  const fetchSummary = () => {
+  const fetchSummary = (attempt = 1) => {
     setLoading(true); setError(null);
     apiFetch(`/api/repositories/${repoId}/codebase-summary`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(data => { setSummary(data); setLoading(false); })
+      .then(async r => {
+        if (!r.ok) {
+          // If transient gateway or server error (e.g. 502, 503, 504), automatically retry once or twice
+          if (attempt <= 2 && [502, 503, 504].includes(r.status)) {
+            setTimeout(() => fetchSummary(attempt + 1), 1200 * attempt);
+            return;
+          }
+          const body = await r.json().catch(() => null);
+          throw new Error(body?.detail || `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (data) {
+          setSummary(data);
+          setLoading(false);
+        }
+      })
       .catch(e => { setError(e.message); setLoading(false); });
   };
 
@@ -131,7 +147,7 @@ function SummaryPanel({ repoId, repoName }) {
       {error && !loading && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', color: 'var(--text-muted)' }}>
           <p style={{ fontSize: '0.82rem', color: '#f87171' }}>⚠ {error}</p>
-          <button onClick={fetchSummary} style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem', border: '1px solid var(--border-glass)', borderRadius: '4px', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>Retry</button>
+          <button onClick={() => fetchSummary(1)} style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem', border: '1px solid var(--border-glass)', borderRadius: '4px', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>Retry</button>
         </div>
       )}
 
@@ -214,7 +230,14 @@ export const Dashboard = ({ stats, technologies, repoId, repoName }) => {
     if (!repoId) return;
     apiFetch(`/api/repositories/${repoId}/manifest`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setManifest(data); })
+      .then(data => {
+        if (data) {
+          setManifest(data);
+          if ((!data.backend || data.backend.length === 0) && data.frontend?.length > 0) {
+            setActiveTab('frontend');
+          }
+        }
+      })
       .catch(() => {});
   }, [repoId]);
 

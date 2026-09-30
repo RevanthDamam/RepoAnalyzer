@@ -3,6 +3,182 @@ import { Send, Users, User, Bot, Layers, Database, Code, Sparkles, RefreshCw, Fi
 import { apiFetch } from '../utils/api';
 
 
+const renderInline = (text) => {
+  if (!text) return null;
+  // Match bold (**text** or __text__) and inline code (`code`)
+  const parts = [];
+  let remaining = text;
+  let keyIndex = 0;
+
+  // Regex matches `code` or **bold** or *italic*
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  let match;
+  let lastIndex = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith('`') && token.endsWith('`')) {
+      parts.push(
+        <code key={keyIndex++} style={{
+          background: 'rgba(255,255,255,0.08)',
+          padding: '0.15rem 0.35rem',
+          borderRadius: '4px',
+          fontFamily: 'monospace',
+          fontSize: '0.88em',
+          color: '#38bdf8'
+        }}>
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else if (token.startsWith('**') && token.endsWith('**')) {
+      parts.push(
+        <strong key={keyIndex++} style={{ fontWeight: 600, color: 'var(--text-primary, #f8fafc)' }}>
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith('*') && token.endsWith('*')) {
+      parts.push(
+        <em key={keyIndex++} style={{ fontStyle: 'italic' }}>
+          {token.slice(1, -1)}
+        </em>
+      );
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
+};
+
+const renderFormattedText = (content) => {
+  if (!content) return null;
+
+  const lines = content.split('\n');
+  const elements = [];
+  let inCodeBlock = false;
+  let codeBuffer = [];
+  let codeLang = '';
+
+  lines.forEach((rawLine, idx) => {
+    const trimmed = rawLine.trim();
+
+    // Check code blocks ```
+    if (trimmed.startsWith('```')) {
+      if (inCodeBlock) {
+        elements.push(
+          <pre key={`code-${idx}`} style={{
+            background: 'rgba(15, 23, 42, 0.75)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            overflowX: 'auto',
+            fontFamily: 'monospace',
+            fontSize: '0.85rem',
+            margin: '0.5rem 0'
+          }}>
+            <code>{codeBuffer.join('\n')}</code>
+          </pre>
+        );
+        codeBuffer = [];
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+        codeLang = trimmed.slice(3).trim();
+      }
+      return;
+    }
+
+    if (inCodeBlock) {
+      codeBuffer.push(rawLine);
+      return;
+    }
+
+    // Markdown Headers
+    if (trimmed.startsWith('### ')) {
+      elements.push(
+        <h4 key={idx} style={{ marginTop: '0.75rem', marginBottom: '0.25rem', color: '#f8fafc', fontWeight: 600 }}>
+          {renderInline(trimmed.replace(/^###\s+/, ''))}
+        </h4>
+      );
+      return;
+    }
+    if (trimmed.startsWith('## ')) {
+      elements.push(
+        <h3 key={idx} style={{ marginTop: '0.9rem', marginBottom: '0.35rem', color: '#38bdf8', fontWeight: 600 }}>
+          {renderInline(trimmed.replace(/^##\s+/, ''))}
+        </h3>
+      );
+      return;
+    }
+    if (trimmed.startsWith('# ')) {
+      elements.push(
+        <h2 key={idx} style={{ marginTop: '1rem', marginBottom: '0.4rem', color: '#60a5fa', fontWeight: 700 }}>
+          {renderInline(trimmed.replace(/^#\s+/, ''))}
+        </h2>
+      );
+      return;
+    }
+
+    // Bullet points (- or *)
+    if (/^[-*]\s+/.test(trimmed)) {
+      elements.push(
+        <li key={idx} style={{ marginLeft: '1.25rem', listStyleType: 'disc', margin: '0.2rem 0' }}>
+          {renderInline(trimmed.replace(/^[-*]\s+/, ''))}
+        </li>
+      );
+      return;
+    }
+
+    // Numbered list
+    if (/^\d+\.\s+/.test(trimmed)) {
+      elements.push(
+        <li key={idx} style={{ marginLeft: '1.25rem', listStyleType: 'decimal', margin: '0.2rem 0' }}>
+          {renderInline(trimmed.replace(/^\d+\.\s+/, ''))}
+        </li>
+      );
+      return;
+    }
+
+    // Empty lines
+    if (!trimmed) {
+      elements.push(<div key={idx} style={{ height: '0.4rem' }} />);
+      return;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={idx} style={{ margin: '0.25rem 0', lineHeight: 1.6 }}>
+        {renderInline(rawLine)}
+      </p>
+    );
+  });
+
+  // Flush unclosed code block if any
+  if (inCodeBlock && codeBuffer.length > 0) {
+    elements.push(
+      <pre key="code-unclosed" style={{
+        background: 'rgba(15, 23, 42, 0.75)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        padding: '0.75rem 1rem',
+        borderRadius: '6px',
+        overflowX: 'auto',
+        fontFamily: 'monospace',
+        fontSize: '0.85rem'
+      }}>
+        <code>{codeBuffer.join('\n')}</code>
+      </pre>
+    );
+  }
+
+  return elements;
+};
+
 export const ChatInterface = ({ repoId }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -150,19 +326,7 @@ export const ChatInterface = ({ repoId }) => {
                 </div>
 
                 <div className="message-content">
-                  {/* For Markdown-like code formatting */}
-                  {msg.content.split('\n').map((line, idx) => {
-                    if (line.startsWith('### ')) {
-                      return <h4 key={idx} style={{ marginTop: '0.75rem', marginBottom: '0.25rem', color: 'var(--text-primary)' }}>{line.replace('### ', '')}</h4>;
-                    }
-                    if (line.startsWith('- ')) {
-                      return <li key={idx} style={{ marginLeft: '1rem', listStyleType: 'disc' }}>{line.replace('- ', '')}</li>;
-                    }
-                    if (line.startsWith('=== ')) {
-                      return <h5 key={idx} style={{ color: 'var(--accent-primary)', margin: '0.5rem 0' }}>{line.replace(/===/g, '')}</h5>;
-                    }
-                    return <p key={idx}>{line}</p>;
-                  })}
+                  {renderFormattedText(msg.content)}
                 </div>
 
                 {/* Render Collaborative Agent reports if Multi-Agent was used */}
@@ -193,7 +357,7 @@ export const ChatInterface = ({ repoId }) => {
                       <div className="agent-card">
                         <div className="agent-name-tag">{activeSubAgentTab[msg.id]} Report</div>
                         <div className="agent-analysis">
-                          {msg.subAgents[activeSubAgentTab[msg.id]]}
+                          {renderFormattedText(msg.subAgents[activeSubAgentTab[msg.id]])}
                         </div>
                       </div>
                     )}

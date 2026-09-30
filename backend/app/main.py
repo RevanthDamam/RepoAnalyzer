@@ -7,16 +7,12 @@ from .api.routes import router as api_router
 from .database.connection import init_db, migrate_db
 
 
-def configured_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "*")
-    if raw.strip() == "*":
-        return ["*"]
-    return [
-        origin.strip().rstrip("/")
-        for origin in raw.split(",")
-        if origin.strip()
-    ]
-
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
+allowed_origins_list = (
+    [orig.strip().rstrip("/") for orig in cors_origins_env.split(",") if orig.strip()]
+    if cors_origins_env
+    else ["https://repo-analyzer-eight.vercel.app", "http://localhost:5173", "http://localhost:3000"]
+)
 
 app = FastAPI(
     title="RepoAnalyzer 2.0 API",
@@ -27,10 +23,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=configured_origins(),
+    allow_origins=allowed_origins_list,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
 

@@ -47,10 +47,24 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "RepoAnalyzer 2.0 API is live"}
+
+
+@app.get("/health")
+def read_health():
+    return {"status": "healthy"}
+
+
 @app.on_event("startup")
 def on_startup():
-    init_db()
-    migrate_db()
+    try:
+        init_db()
+        migrate_db()
+    except Exception as exc:
+        print(f"[startup] Warning: Database initialization deferred or failed: {exc}")
 
 
 app.include_router(api_router)
+

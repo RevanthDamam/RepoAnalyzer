@@ -42,21 +42,7 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def cors_and_security_middleware(request: Request, call_next):
-    # If browser sends an OPTIONS preflight request, ensure CORS headers are attached directly
-    if request.method == "OPTIONS":
-        from fastapi.responses import Response
-        origin = request.headers.get("origin", "*")
-        return Response(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
-                "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "86400",
-            },
-        )
+async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")

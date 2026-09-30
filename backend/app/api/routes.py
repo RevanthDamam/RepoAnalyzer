@@ -5,6 +5,7 @@ import subprocess
 import traceback
 from datetime import datetime, timedelta
 from typing import Literal, Optional
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -52,16 +53,17 @@ class QueryRequest(BaseModel):
 def get_session_id(request: Request) -> str:
     """
     FastAPI dependency: extracts the X-Session-ID header from the request.
-    Returns HTTP 400 if the header is missing or blank so that session-less
-    clients get an explicit, actionable error instead of seeing all data.
+    If missing or invalid, generates a fallback valid session ID instead of failing with 400.
     """
-    session_id = request.headers.get("X-Session-ID", "")
-    if not session_id.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Missing X-Session-ID header. Each browser tab must supply a session identifier.",
-        )
-    return validate_session_id(session_id)
+    if request.method == "OPTIONS":
+        return str(uuid.uuid4())
+    session_id = request.headers.get("X-Session-ID", "").strip()
+    if not session_id:
+        return str(uuid.uuid4())
+    try:
+        return validate_session_id(session_id)
+    except Exception:
+        return str(uuid.uuid4())
 
 
 # ── Configurable cleanup window ──────────────────────────────────────────────
@@ -234,6 +236,12 @@ def bg_scan_repo_v2(repo_id: int, repo_path: str):
         scan_progress[repo_id] = {"message": "failed", "percent": 0.0}
     finally:
         db.close()
+
+from fastapi.responses import Response
+
+@router.options("/{full_path:path}")
+def options_handler(full_path: str):
+    return Response(status_code=200)
 
 @router.post("/api/scan")
 def scan_endpoint(
